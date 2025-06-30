@@ -44,10 +44,10 @@ app.patch("/user", async (req, res) => {
   try {
     const userId = req.body.userId;
     const data = req.body;
-    const user = await User.findByIdAndUpdate(userId, data);
+    const user = await User.findByIdAndUpdate(userId, data,{runValidators: true});
     res.send("user successfully Updated!");
   } catch (err) {
-    res.status(401).send("Something went Wrong");
+    res.status(400).send("Upadate Failed"+err.message);
   }
 });
 
