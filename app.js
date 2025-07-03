@@ -31,8 +31,8 @@ app.get("/feed", async (req, res) => {
 });
 
 app.delete("/user", async (req, res) => {
+  const userId = req.body.userId;
   try {
-    const userId = req.body.userId;
     const user = await User.findByIdAndDelete(userId);
     res.send("User is successfull Deleted!");
   } catch (err) {
@@ -40,14 +40,30 @@ app.delete("/user", async (req, res) => {
   }
 });
 
-app.patch("/user", async (req, res) => {
+app.patch("/user/:userId", async (req, res) => {
+  const userId = req.params?.userId;
+  const data = req.body;
+  const ALLOWED_UPDATES = ["photoUrl", "about", "gender", "skills", "age"];
+
   try {
-    const userId = req.body.userId;
-    const data = req.body;
-    const user = await User.findByIdAndUpdate(userId, data,{runValidators: true});
+    const isUpdateAllowed = Object.keys(data).every((k) =>
+      ALLOWED_UPDATES.includes(k)
+    );
+
+    if (!isUpdateAllowed) {
+      throw new Error(" Update not Allowed!");
+    }
+
+    if (data?.skills.lenght > 10) {
+      throw new Error("Skills can't be more then 10");
+    }
+
+    const user = await User.findByIdAndUpdate(userId, data, {
+      runValidators: true,
+    });
     res.send("user successfully Updated!");
   } catch (err) {
-    res.status(400).send("Upadate Failed"+err.message);
+    res.status(400).send("Upadate Failed" + err.message);
   }
 });
 
