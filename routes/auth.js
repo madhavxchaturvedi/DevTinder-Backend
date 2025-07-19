@@ -13,7 +13,6 @@ router.post("/signup", async (req, res) => {
 
     //Encrypt the password
     const passwordHash = await bcrypt.hash(password, 10);
-    console.log(passwordHash);
 
     const newUser = new User({
       firstName,
