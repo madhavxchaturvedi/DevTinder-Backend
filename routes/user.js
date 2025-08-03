@@ -38,7 +38,7 @@ router.get("/user/connections", userAuth, async (req, res) => {
         { toUserId: loggedInUser._id, status: "accepted" },
         { fromUserId: loggedInUser._id, status: "accepted" },
       ],
-    }).populate("fromUserId", userAllowedData);
+    }).populate("fromUserId", userAllowedData).populate("toUserId", userAllowedData);
 
     const data = connectionRequest.map((row) => {
       if (row.fromUserId._id.toString() === loggedInUser._id.toString()) {
@@ -46,7 +46,7 @@ router.get("/user/connections", userAuth, async (req, res) => {
       }
       return row.fromUserId;
     });
-
+ 
     res.json({ data });
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -82,7 +82,7 @@ router.get("/feed", userAuth, async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    res.json({ users });
+    res.json({ data: users });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
