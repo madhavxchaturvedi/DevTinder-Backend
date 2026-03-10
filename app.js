@@ -13,7 +13,7 @@ const app = express();
 
 const allowedOrigins = [
   "http://localhost:5173",
-  "https://devtinder-frontend-mu.vercel.app",
+  "https://devxtinder.vercel.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -22,10 +22,13 @@ const corsOptions = {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") // Allow all Vercel preview deployments
+    ) {
       callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      callback(null, false);
     }
   },
   credentials: true, //access-control-allow-credentials:true
