@@ -11,10 +11,10 @@ const userRouter = require("./routes/user");
 
 const app = express();
 
-const corsOptions ={
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
-    credentials:true,            //access-control-allow-credentials:true
-}
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  credentials: true, //access-control-allow-credentials:true
+};
 app.use(cors(corsOptions));
 
 app.use(express.json());
