@@ -46,12 +46,12 @@ router.post("/request/send/:status/:toUserId", userAuth, async (req, res) => {
 
     const data = await connectionRequest.save();
 
-    const emailResponse = await sendEmail.run(
-      "A new Connection Request!",
-      req.user.firstName +
-        " has sent you a connection request on DevTinder. Please check the app to respond to the request.",
-    );
-    console.log("Email Response: ", emailResponse);
+    // const emailResponse = await sendEmail.run(
+    //   "A new Connection Request!",
+    //   req.user.firstName +
+    //     " has sent you a connection request on DevTinder. Please check the app to respond to the request.",
+    // );
+    // console.log("Email Response: ", emailResponse);
 
     res.json({ message: "Connection Request Send SuccessFully", data });
   } catch (err) {
