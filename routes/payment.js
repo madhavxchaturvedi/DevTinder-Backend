@@ -106,9 +106,9 @@ router.get("/premium/verify", userAuth, async (req, res) => {
   try {
     const user = req.user;
     if (user.isPremium) {
-      res.json({ isPremium: true });
+      return res.json({ isPremium: true });
     }
-    res.json({ isPremium: false });
+    return res.json({ isPremium: false });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
