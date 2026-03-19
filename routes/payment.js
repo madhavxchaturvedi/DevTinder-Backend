@@ -55,7 +55,7 @@ router.post("/payment/create", userAuth, async (req, res) => {
 
 router.post("/payment/webhook", async (req, res) => {
   try {
-    const webhookSignature = req.get("x-razorpay-signature");
+    const webhookSignature = req.get("X-Razorpay-Signature");
     const isWebhookValid = validateWebhookSignature(
       JSON.stringify(req.body),
       webhookSignature,
@@ -68,25 +68,26 @@ router.post("/payment/webhook", async (req, res) => {
 
     //update the payment status in DB
     const paymentDetails = req.body.payload.payment.entity;
-    const payment = await Payment.findOne({orderId:paymentDetails.order_id});
-    if(!payment){
-      return res.status(404).json({message: "Payment not found"});
-    }  
-    payment.status = paymentDeatils.status;
-    await payment.save(); 
-
+    const payment = await Payment.findOne({ orderId: paymentDetails.order_id });
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+    payment.status = paymentDetails.status;
+    await payment.save();
 
     //update the user membership status in DB
-    const user = await User.findOne({_id: payment.userId});
-    if(!user){
-      return res.status(404).json({message: "User not found"});
+    const user = await User.findOne({ _id: payment.userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
     user.isPremium = true;
     user.membershipType = payment.notes.membershipType;
 
     await user.save();
 
-    res.status(200).json({ message: "Webhook received and processed successfully" });
+    res
+      .status(200)
+      .json({ message: "Webhook received and processed successfully" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
