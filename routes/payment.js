@@ -75,7 +75,7 @@ router.post("/payment/webhook", async (req, res) => {
     payment.status = paymentDetails.status;
     await payment.save();
 
-    if (payment.status !== "captured") {
+    if (payment.status === "captured") {
       const user = await User.findOne({ _id: payment.userId });
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -84,12 +84,12 @@ router.post("/payment/webhook", async (req, res) => {
       user.membershipType = payment.notes.membershipType;
 
       await user.save();
-      res
+      return res
         .status(200)
         .json({ message: "Payment successful and user upgraded to premium" });
     }
     if (payment.status === "failed") {
-      res.status(200).json({ message: "Payment failed" });
+      return res.status(200).json({ message: "Payment failed" });
     }
     //update the user membership status in DB
 
