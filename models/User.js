@@ -50,6 +50,17 @@ const userSchema = new mongoose.Schema(
       //   }
       // },
     },
+    isPremium: {
+      type: Boolean,
+      default: false,
+    },
+    membershipType: {
+      type: String,
+      enum: {
+        values: ["silver", "gold"],
+        message: `{VALUE} is not a valid membership type`,
+      },
+    },
     photoUrl: {
       type: String,
       default: "https://geographyandyou.com/images/user-profile.png",
@@ -68,7 +79,7 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 userSchema.methods.getJWT = async function () {
@@ -86,7 +97,7 @@ userSchema.methods.validatePassword = async function (passwordInputByUser) {
 
   const isPasswordValid = await bcrypt.compare(
     passwordInputByUser,
-    passwordHash
+    passwordHash,
   );
 
   return isPasswordValid;
