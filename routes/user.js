@@ -74,12 +74,23 @@ router.get("/feed", userAuth, async (req, res) => {
       hideUsersFromFeed.add(req.toUserId.toString());
     });
 
-    const users = await User.find({
+    const query = {
       $and: [
         { _id: { $nin: Array.from(hideUsersFromFeed) } },
         { _id: { $ne: loggedInUser._id } },
       ],
-    })
+    };
+
+    if (req.query.skills) {
+      const skillsArray = req.query.skills.split(",").map((s) => s.trim());
+      query.$and.push({
+        skills: {
+          $in: skillsArray.map((skill) => new RegExp(`^${skill}$`, "i")),
+        },
+      });
+    }
+
+    const users = await User.find(query)
       .select(userAllowedData)
       .skip(skip)
       .limit(limit);
