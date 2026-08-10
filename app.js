@@ -16,6 +16,7 @@ const paymentRouter = require("./routes/payment");
 const chatRouter = require("./routes/chat");
 const notificationsRouter = require("./routes/notifications");
 const publicProfileRouter = require("./routes/publicProfile");
+const postRouter = require("./routes/postRouter");
 
 const app = express();
 const server = http.createServer(app); // wrap in http.Server for Socket.io
@@ -55,6 +56,7 @@ app.use("/", paymentRouter);
 app.use("/", chatRouter);
 app.use("/", notificationsRouter);
 app.use("/", publicProfileRouter);
+app.use("/", postRouter);
 
 // Initialize Socket.io on the HTTP server and store io on app
 const io = initializeSocket(server);
