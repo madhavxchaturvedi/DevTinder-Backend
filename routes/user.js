@@ -66,12 +66,19 @@ router.get("/feed", userAuth, async (req, res) => {
 
     const connectionRequest = await ConnectionRequestModel.find({
       $or: [{ fromUserId: loggedInUser }, { toUserId: loggedInUser }],
-    }).select("fromUserId toUserId");
+    }).select("fromUserId toUserId status");
 
     const hideUsersFromFeed = new Set();
     connectionRequest.forEach((req) => {
-      hideUsersFromFeed.add(req.fromUserId.toString());
-      hideUsersFromFeed.add(req.toUserId.toString());
+      // Hide users I have already swiped on
+      if (req.fromUserId.toString() === loggedInUser._id.toString()) {
+        hideUsersFromFeed.add(req.toUserId.toString());
+      }
+      // Hide users we are already matched or rejected with
+      if (req.status === "accepted" || req.status === "rejected") {
+        hideUsersFromFeed.add(req.fromUserId.toString());
+        hideUsersFromFeed.add(req.toUserId.toString());
+      }
     });
 
     const query = {

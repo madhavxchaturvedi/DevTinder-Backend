@@ -34,9 +34,40 @@ router.post("/request/send/:status/:toUserId", userAuth, async (req, res) => {
     });
 
     if (existingConnectionReqest) {
-      return res
-        .status(400)
-        .json({ message: "Connection Request Already Exists!" });
+      // If the other user already sent a request to me
+      if (existingConnectionReqest.fromUserId.toString() === toUserId.toString()) {
+        if (existingConnectionReqest.status === "interested") {
+          if (status === "interested") {
+            // It's a mutual match!
+            existingConnectionReqest.status = "accepted";
+            const data = await existingConnectionReqest.save();
+            
+            // Notify the original sender that their request was accepted
+            const notification = await Notification.create({
+              userId: toUserId,
+              fromUserId: fromUserId,
+              type: "request_accepted",
+              connectionRequestId: data._id,
+            });
+            const populatedNotification = await notification.populate("fromUserId", "firstName lastName photoUrl");
+            const io = req.app.get("io");
+            if (io) io.to(`user:${toUserId}`).emit("newNotification", populatedNotification);
+
+            return res.json({ 
+              message: "It's a Match! 🎉", 
+              isMatch: true, 
+              matchedUser: toUser,
+              data 
+            });
+          } else if (status === "ignored") {
+            // I rejected their request from the feed
+            existingConnectionReqest.status = "rejected";
+            const data = await existingConnectionReqest.save();
+            return res.json({ message: "Request Rejected", data });
+          }
+        }
+      }
+      return res.status(400).json({ message: "Connection Request Already Exists!" });
     }
 
     const connectionRequest = new ConnectionRequestModel({
