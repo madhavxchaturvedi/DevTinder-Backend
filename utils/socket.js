@@ -106,9 +106,32 @@ const initializeSocket = (server) => {
     });
 
     // ── Sandbox: Join a live coding room ────────────────────────
-    socket.on("joinSandbox", ({ roomId }) => {
+    socket.on("joinSandbox", ({ roomId, userId }) => {
       socket.join(roomId);
       console.log(`💻 User ${socket.userId} joined sandbox room: ${roomId}`);
+      if (userId) {
+        socket.to(roomId).emit("userJoinedSandbox", { userId });
+      }
+    });
+
+    socket.on("acknowledgeSandboxJoin", ({ roomId, userId }) => {
+      socket.to(roomId).emit("userAlreadyInSandbox", { userId });
+    });
+
+    socket.on("leaveSandbox", ({ roomId, userId }) => {
+      socket.leave(roomId);
+      if (userId) {
+        socket.to(roomId).emit("userLeftSandbox", { userId });
+      }
+    });
+
+    // ── Sandbox: Presence Ping (for Chat UI) ────────────────────
+    socket.on("pingSandboxPresence", ({ roomId }) => {
+      socket.to(roomId).emit("sandboxPresencePing", { requesterId: socket.id });
+    });
+
+    socket.on("pongSandboxPresence", ({ targetSocketId, userId }) => {
+      io.to(targetSocketId).emit("sandboxPresencePong", { userId });
     });
 
     // ── Sandbox: Handle code changes ────────────────────────────
@@ -130,9 +153,29 @@ const initializeSocket = (server) => {
       socket.to(roomId).emit("receiveOutput", { output });
     });
 
+    // ── Sandbox: Late Join Sync ─────────────────────────────────
+    socket.on("requestSandboxSync", ({ roomId }) => {
+      // Ask others in the room to send their current state
+      socket.to(roomId).emit("provideSandboxSync", { targetSocketId: socket.id });
+    });
+
+    socket.on("sendSandboxSync", ({ targetSocketId, code, language }) => {
+      // Send state directly to the requester
+      io.to(targetSocketId).emit("receiveCodeChange", { code, language });
+    });
+
     // ── Sandbox: Handle in-sandbox chat ─────────────────────────
     socket.on("sandboxMessage", ({ roomId, message, user }) => {
       io.to(roomId).emit("receiveSandboxMessage", { message, user, timestamp: new Date() });
+    });
+
+    socket.on("disconnecting", () => {
+      // Broadcast leave event to all rooms this user was in (before they are cleared)
+      for (const room of socket.rooms) {
+        if (room !== `user:${socket.userId}` && room !== socket.id) {
+          socket.to(room).emit("userLeftSandbox", { userId: socket.userId });
+        }
+      }
     });
 
     socket.on("disconnect", () => {
