@@ -4,6 +4,7 @@ const { userAuth } = require("../middlewares/auth");
 const Post = require("../models/Post");
 const Follow = require("../models/Follow");
 const Reaction = require("../models/Reaction");
+const ConnectionRequest = require("../models/connectionRequest");
 
 // CREATE a new post
 postRouter.post("/post", userAuth, async (req, res) => {
@@ -55,6 +56,9 @@ postRouter.post("/post", userAuth, async (req, res) => {
 
     await post.save();
     await post.populate("authorId", "firstName lastName photoUrl skills");
+    if (post.forkedFrom) {
+      await post.populate({ path: "forkedFrom", populate: { path: "authorId", select: "firstName lastName" } });
+    }
 
     res.status(201).json({
       message: "Post created successfully",
@@ -77,8 +81,17 @@ postRouter.get("/feed/posts", userAuth, async (req, res) => {
 
     // 1. Get followed users
     const follows = await Follow.find({ followerId: userId }).select("targetId");
-    const followedUserIds = follows.map(f => f.targetId);
-    followedUserIds.push(userId); // Add self
+    const followedUserIds = follows.map(f => f.targetId.toString());
+    followedUserIds.push(userId.toString()); // Add self
+    
+    // 2. Get matched users
+    const matches = await ConnectionRequest.find({
+      status: "accepted",
+      $or: [{ fromUserId: userId }, { toUserId: userId }]
+    });
+    const matchedUserIds = matches.map(m => 
+      m.fromUserId.toString() === userId.toString() ? m.toUserId.toString() : m.fromUserId.toString()
+    );
 
     // Build query
     const query = { moderationStatus: "safe" };
@@ -88,7 +101,7 @@ postRouter.get("/feed/posts", userAuth, async (req, res) => {
       { visibility: "public" },
       { authorId: userId },
       { visibility: "followers", authorId: { $in: followedUserIds } },
-      // Note: we can add "matches" logic here later by querying ConnectionRequestModel
+      { visibility: "matches", authorId: { $in: matchedUserIds } }
     ];
 
     if (filterTag) {
@@ -102,8 +115,16 @@ postRouter.get("/feed/posts", userAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+      
+    // Fetch user reactions for these posts
+    const feedPostIds = feed.map(p => p._id);
+    const userReactions = await Reaction.find({ userId, postId: { $in: feedPostIds } });
+    const userReactionsMap = {};
+    userReactions.forEach(r => {
+      userReactionsMap[r.postId] = r.type;
+    });
 
-    res.status(200).json({ data: feed });
+    res.status(200).json({ data: feed, followedUserIds, userReactionsMap });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
