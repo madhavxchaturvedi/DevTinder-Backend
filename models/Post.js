@@ -7,34 +7,60 @@ const postSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    type: {
+      type: String,
+      enum: ["standard", "snippet", "debug_sos"],
+      default: "standard",
+    },
     content: {
       type: String,
       trim: true,
-      maxLength: 2000,
+      maxLength: 3000,
+      required: true,
     },
     codeSnippet: {
-      type: String,
-      trim: true,
-      maxLength: 5000,
+      language: { type: String },
+      code: { type: String, maxLength: 10000 },
     },
-    codeLanguage: {
-      type: String,
-      default: "javascript",
+    forkedFrom: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
     },
-    imageUrl: {
-      type: String,
-      default: "",
+    rootPostId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
     },
-    likes: [
+    stackTags: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        type: String,
+        trim: true,
+        lowercase: true,
       },
     ],
-    // For future expansion: comments
+    visibility: {
+      type: String,
+      enum: ["public", "followers", "matches"],
+      default: "public",
+    },
+    moderationStatus: {
+      type: String,
+      enum: ["safe", "flagged", "hidden"],
+      default: "safe",
+    },
+    reactions: {
+      fire: { type: Number, default: 0 },
+      bug: { type: Number, default: 0 },
+      clever: { type: Number, default: 0 },
+      collab: { type: Number, default: 0 },
+    },
   },
   { timestamps: true }
 );
+
+// Indexes for fast feed queries
+postSchema.index({ authorId: 1, createdAt: -1 });
+postSchema.index({ createdAt: -1 });
+postSchema.index({ stackTags: 1, createdAt: -1 });
 
 const Post = mongoose.model("Post", postSchema);
 module.exports = Post;

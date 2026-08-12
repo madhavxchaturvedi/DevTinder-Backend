@@ -3,6 +3,7 @@ const { userAuth } = require("../middlewares/auth");
 const ConnectionRequestModel = require("../models/connectionRequest");
 const router = express.Router();
 const User = require("../models/User");
+const Follow = require("../models/Follow");
 
 const userAllowedData = [
   "firstName",
@@ -105,6 +106,80 @@ router.get("/feed", userAuth, async (req, res) => {
     res.json({ data: users });
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// ── Follow / Unfollow ──────────────────────────────────────────
+
+router.post("/user/follow/:targetId", userAuth, async (req, res) => {
+  try {
+    const loggedInUserId = req.user._id;
+    const targetId = req.params.targetId;
+
+    if (loggedInUserId.toString() === targetId.toString()) {
+      return res.status(400).json({ message: "You cannot follow yourself" });
+    }
+
+    const targetUser = await User.findById(targetId);
+    if (!targetUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if already following
+    const existingFollow = await Follow.findOne({
+      followerId: loggedInUserId,
+      targetId: targetId,
+    });
+
+    if (existingFollow) {
+      return res.status(400).json({ message: "Already following this user" });
+    }
+
+    const follow = new Follow({
+      followerId: loggedInUserId,
+      targetId: targetId,
+    });
+    
+    try {
+      await follow.save();
+    } catch (saveErr) {
+      if (saveErr.code === 11000) {
+        return res.status(400).json({ message: "Already following this user" });
+      }
+      throw saveErr;
+    }
+
+    // Increment counts
+    await User.findByIdAndUpdate(loggedInUserId, { $inc: { followingCount: 1 } });
+    await User.findByIdAndUpdate(targetId, { $inc: { followersCount: 1 } });
+
+    res.json({ message: "Successfully followed user", data: follow });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post("/user/unfollow/:targetId", userAuth, async (req, res) => {
+  try {
+    const loggedInUserId = req.user._id;
+    const targetId = req.params.targetId;
+
+    const deletedFollow = await Follow.findOneAndDelete({
+      followerId: loggedInUserId,
+      targetId: targetId,
+    });
+
+    if (!deletedFollow) {
+      return res.status(400).json({ message: "You are not following this user" });
+    }
+
+    // Decrement counts (ensure they don't go below 0 just in case)
+    await User.findByIdAndUpdate(loggedInUserId, { $inc: { followingCount: -1 } });
+    await User.findByIdAndUpdate(targetId, { $inc: { followersCount: -1 } });
+
+    res.json({ message: "Successfully unfollowed user" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
