@@ -105,6 +105,36 @@ const initializeSocket = (server) => {
       socket.to(roomId).emit("userTyping", { userId: socket.userId, isTyping });
     });
 
+    // ── Sandbox: Join a live coding room ────────────────────────
+    socket.on("joinSandbox", ({ roomId }) => {
+      socket.join(roomId);
+      console.log(`💻 User ${socket.userId} joined sandbox room: ${roomId}`);
+    });
+
+    // ── Sandbox: Handle code changes ────────────────────────────
+    socket.on("codeChange", ({ roomId, code, language }) => {
+      socket.to(roomId).emit("receiveCodeChange", { code, language });
+    });
+
+    // ── Sandbox: Handle cursor movements ────────────────────────
+    socket.on("cursorMove", ({ roomId, position, userName }) => {
+      socket.to(roomId).emit("receiveCursorMove", { userId: socket.userId, userName, position });
+    });
+
+    // ── Sandbox: Sync Output and Execution ──────────────────────
+    socket.on("syncExecutionState", ({ roomId, isExecuting }) => {
+      socket.to(roomId).emit("receiveExecutionState", { isExecuting });
+    });
+
+    socket.on("syncOutput", ({ roomId, output }) => {
+      socket.to(roomId).emit("receiveOutput", { output });
+    });
+
+    // ── Sandbox: Handle in-sandbox chat ─────────────────────────
+    socket.on("sandboxMessage", ({ roomId, message, user }) => {
+      io.to(roomId).emit("receiveSandboxMessage", { message, user, timestamp: new Date() });
+    });
+
     socket.on("disconnect", () => {
       console.log(`🔌 User disconnected: ${socket.userId}`);
     });
