@@ -140,13 +140,13 @@ router.post(
       if (status === "accepted") {
         const notification = await Notification.create({
           userId: connectionRequest.fromUserId,
-          fromUserId: loggedInUser._id,
-          type: "request_accepted",
+          actorIds: [loggedInUser._id],
+          type: "match",
           connectionRequestId: data._id,
         });
 
         const populatedNotification = await notification.populate(
-          "fromUserId",
+          "actorIds",
           "firstName lastName photoUrl"
         );
 

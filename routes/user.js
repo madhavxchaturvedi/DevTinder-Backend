@@ -153,6 +153,17 @@ router.post("/user/follow/:targetId", userAuth, async (req, res) => {
     await User.findByIdAndUpdate(loggedInUserId, { $inc: { followingCount: 1 } });
     await User.findByIdAndUpdate(targetId, { $inc: { followersCount: 1 } });
 
+    // Fire Notification for follow (upsert pattern for batching)
+    const Notification = require("../models/Notification");
+    const notification = await Notification.findOneAndUpdate(
+      { userId: targetId, type: "follow", read: false },
+      { $addToSet: { actorIds: loggedInUserId }, $set: { updatedAt: new Date() } },
+      { upsert: true, new: true }
+    ).populate("actorIds", "firstName lastName photoUrl");
+
+    const io = req.app.get("io");
+    if (io) io.to(`user:${targetId}`).emit("newNotification", notification);
+
     res.json({ message: "Successfully followed user", data: follow });
   } catch (err) {
     res.status(500).json({ message: err.message });

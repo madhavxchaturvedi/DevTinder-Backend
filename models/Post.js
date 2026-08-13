@@ -42,6 +42,10 @@ const postSchema = new mongoose.Schema(
       enum: ["public", "followers", "matches"],
       default: "public",
     },
+    isResolved: {
+      type: Boolean,
+      default: false,
+    },
     moderationStatus: {
       type: String,
       enum: ["safe", "flagged", "hidden"],

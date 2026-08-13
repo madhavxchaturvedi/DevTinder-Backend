@@ -9,14 +9,18 @@ const notificationSchema = new mongoose.Schema(
       required: true,
     },
     fromUserId: {
-      // who triggered it
+      // Legacy or single-actor fallback
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
+    actorIds: [{
+      // Array of users who triggered this (for batched notifications like reactions)
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    }],
     type: {
       type: String,
-      enum: ["connection_request", "request_accepted", "request_rejected"],
+      enum: ["connection_request", "request_accepted", "request_rejected", "reaction", "comment", "fork", "follow", "match"],
       required: true,
     },
     read: {
@@ -26,6 +30,14 @@ const notificationSchema = new mongoose.Schema(
     connectionRequestId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ConnectionRequest",
+    },
+    postId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Post",
+    },
+    commentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Comment",
     },
   },
   { timestamps: true }

@@ -84,6 +84,10 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    helpfulAnswers: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

@@ -34,9 +34,17 @@ postRouter.post("/post", userAuth, async (req, res) => {
           }
         }
       } else if (parentPost.visibility === "matches") {
-        // We will need to check ConnectionRequest status here (leaving a stub for now if it's strictly matches-only)
         if (parentPost.authorId.toString() !== req.user._id.toString()) {
-          return res.status(403).json({ message: "Matches-only visibility check not fully implemented yet" });
+          const isMatch = await ConnectionRequest.findOne({
+            status: "accepted",
+            $or: [
+              { fromUserId: req.user._id, toUserId: parentPost.authorId },
+              { fromUserId: parentPost.authorId, toUserId: req.user._id }
+            ]
+          });
+          if (!isMatch) {
+            return res.status(403).json({ message: "You must be a match to view or fork this post" });
+          }
         }
       }
 
@@ -58,6 +66,20 @@ postRouter.post("/post", userAuth, async (req, res) => {
     await post.populate("authorId", "firstName lastName photoUrl skills");
     if (post.forkedFrom) {
       await post.populate({ path: "forkedFrom", populate: { path: "authorId", select: "firstName lastName" } });
+      
+      // Notify parent post author about fork (if not self)
+      const parentAuthorId = post.forkedFrom.authorId._id || post.forkedFrom.authorId;
+      if (parentAuthorId.toString() !== req.user._id.toString()) {
+        const Notification = require("../models/Notification");
+        const notification = await Notification.findOneAndUpdate(
+          { userId: parentAuthorId, postId: post.forkedFrom._id, type: "fork", read: false },
+          { $addToSet: { actorIds: req.user._id }, $set: { updatedAt: new Date() } },
+          { upsert: true, new: true }
+        ).populate("actorIds", "firstName lastName photoUrl");
+        
+        const io = req.app.get("io");
+        if (io) io.to(`user:${parentAuthorId}`).emit("newNotification", notification);
+      }
     }
 
     res.status(201).json({
@@ -170,9 +192,25 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
       // New reaction
       if (type === "none") return res.status(400).json({ message: "Cannot apply 'none' to a non-existent reaction" });
       
-      const reaction = new Reaction({ postId, userId, type });
-      await reaction.save();
-      await Post.findByIdAndUpdate(postId, { $inc: { [`reactions.${type}`]: 1 } });
+      const newReaction = new Reaction({ postId, userId, type });
+      await newReaction.save();
+      
+      // Increment post stats
+      post.reactions[type] += 1;
+      await post.save();
+
+      // Fire Notification (batched via atomic upsert)
+      if (post.authorId.toString() !== userId.toString()) {
+        const Notification = require("../models/Notification");
+        const notification = await Notification.findOneAndUpdate(
+          { userId: post.authorId, postId: post._id, type: "reaction", read: false },
+          { $addToSet: { actorIds: userId }, $set: { updatedAt: new Date() } },
+          { upsert: true, new: true }
+        ).populate("actorIds", "firstName lastName photoUrl");
+
+        const io = req.app.get("io");
+        if (io) io.to(`user:${post.authorId}`).emit("newNotification", notification);
+      }
       return res.json({ message: "Reaction added", currentReaction: type });
     }
   } catch (err) {
