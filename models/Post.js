@@ -30,6 +30,13 @@ const postSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Post",
     },
+    images: {
+      type: [String],
+      validate: [arrayLimit, '{PATH} exceeds the limit of 4'],
+    },
+    documentUrl: {
+      type: String,
+    },
     stackTags: [
       {
         type: String,
@@ -60,6 +67,10 @@ const postSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+function arrayLimit(val) {
+  return val.length <= 4;
+}
 
 // Indexes for fast feed queries
 postSchema.index({ authorId: 1, createdAt: -1 });

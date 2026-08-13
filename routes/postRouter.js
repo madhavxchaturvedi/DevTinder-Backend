@@ -5,11 +5,34 @@ const Post = require("../models/Post");
 const Follow = require("../models/Follow");
 const Reaction = require("../models/Reaction");
 const ConnectionRequest = require("../models/connectionRequest");
+const multer = require("multer");
+const cloudinary = require("../utils/cloudinary");
+const streamifier = require("stream");
+
+// Multer config for post uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB global limit per file
+  fileFilter(req, file, cb) {
+    if (file.fieldname === "images" && !file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed for images"), false);
+    }
+    // For document, allow PDF, doc, docx, etc.
+    if (file.fieldname === "document" && 
+        !file.mimetype.includes("pdf") && 
+        !file.mimetype.includes("msword") && 
+        !file.mimetype.includes("wordprocessingml") &&
+        !file.mimetype.includes("text/plain")) {
+      return cb(new Error("Only PDF, Word, or text files are allowed for documents"), false);
+    }
+    cb(null, true);
+  },
+});
 
 // CREATE a new post
 postRouter.post("/post", userAuth, async (req, res) => {
   try {
-    const { type, content, codeSnippet, forkedFrom, stackTags, visibility } = req.body;
+    const { type, content, codeSnippet, forkedFrom, stackTags, visibility, images, documentUrl } = req.body;
     
     if (!content) {
       return res.status(400).json({ message: "Post content is required" });
@@ -59,7 +82,9 @@ postRouter.post("/post", userAuth, async (req, res) => {
       forkedFrom,
       rootPostId,
       stackTags: stackTags || [],
-      visibility: visibility || "public"
+      visibility: visibility || "public",
+      images: images || [],
+      documentUrl: documentUrl || null,
     });
 
     await post.save();
@@ -90,6 +115,66 @@ postRouter.post("/post", userAuth, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// UPLOAD POST MEDIA
+postRouter.post(
+  "/post/upload-media",
+  userAuth,
+  upload.fields([{ name: "images", maxCount: 4 }, { name: "document", maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const files = req.files;
+      if (!files || (!files.images && !files.document)) {
+        return res.status(400).json({ message: "No files provided" });
+      }
+
+      const uploadToCloudinary = (buffer, folder, resource_type = "auto") =>
+        new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            { folder, resource_type, quality: "auto" },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result.secure_url);
+            }
+          );
+          const bufferStream = new streamifier.Readable();
+          bufferStream.push(buffer);
+          bufferStream.push(null);
+          bufferStream.pipe(uploadStream);
+        });
+
+      const uploadPromises = [];
+      const resultMap = { images: [], documentUrl: null };
+
+      // Upload Images
+      if (files.images) {
+        files.images.forEach((file) => {
+          uploadPromises.push(
+            uploadToCloudinary(file.buffer, "devtinder/posts/images", "image").then(
+              (url) => resultMap.images.push(url)
+            )
+          );
+        });
+      }
+
+      // Upload Document
+      if (files.document) {
+        uploadPromises.push(
+          uploadToCloudinary(files.document[0].buffer, "devtinder/posts/docs", "raw").then(
+            (url) => resultMap.documentUrl = url
+          )
+        );
+      }
+
+      await Promise.all(uploadPromises);
+
+      res.status(200).json(resultMap);
+    } catch (err) {
+      console.error("Upload error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
 
 // GET timeline feed (Followed + Global Trending combined)
 postRouter.get("/feed/posts", userAuth, async (req, res) => {
