@@ -11,7 +11,8 @@ router.get("/notifications", userAuth, async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate("fromUserId", "firstName lastName photoUrl");
+      .populate("fromUserId", "firstName lastName photoUrl")
+      .populate("actorIds", "firstName lastName photoUrl");
 
     const unreadCount = await Notification.countDocuments({
       userId: req.user._id,
