@@ -99,6 +99,25 @@ const initializeSocket = (server) => {
       }
     });
 
+    socket.on("chat:system_message", async ({ targetId, text, type }) => {
+      try {
+        if (!text) return;
+
+        const newMessage = await Message.create({
+          senderId: socket.userId,
+          receiverId: targetId,
+          text: text,
+          type: type || "system"
+        });
+
+        const populated = await newMessage.populate("senderId", "firstName photoUrl");
+        const roomId = [socket.userId, targetId].sort().join("_");
+        io.to(roomId).emit("receiveMessage", populated);
+      } catch (err) {
+        console.error("system message error:", err);
+      }
+    });
+
     // ── Chat: Typing indicator ──────────────────────────────────
     socket.on("typing", ({ targetId, isTyping }) => {
       const roomId = [socket.userId, targetId].sort().join("_");
@@ -168,6 +187,44 @@ const initializeSocket = (server) => {
     socket.on("sandboxMessage", ({ roomId, message, user }) => {
       io.to(roomId).emit("receiveSandboxMessage", { message, user, timestamp: new Date() });
     });
+
+    // ── Project Room ────────────────
+    socket.on("enterProjectRoom", async ({ roomId, projectTitle }) => {
+      socket.join(roomId);
+      socket.to(roomId).emit("partnerEnteredRoom", { userId: socket.userId });
+      
+      // Notify partner even if they're not in the room yet
+      const ProjectRoom = require("../models/ProjectRoom");
+      const room = await ProjectRoom.findOne({ roomId });
+      if (room) {
+        const partnerId = room.members.find(m => m.toString() !== socket.userId.toString());
+        if (partnerId) {
+          io.to(`user:${partnerId}`).emit("newNotification", {
+            type: "partner_in_room", 
+            message: `Your partner is in the ${projectTitle || 'project'} room`,
+            roomId
+          });
+        }
+      }
+    });
+
+    socket.on("leaveProjectRoom", ({ roomId }) => {
+      socket.leave(roomId);
+      socket.to(roomId).emit("partnerLeftRoom", { userId: socket.userId });
+    });
+
+    socket.on("saveProjectState", async ({ roomId, code, language }) => {
+      const ProjectRoom = require("../models/ProjectRoom");
+      await ProjectRoom.findOneAndUpdate({ roomId }, { lastCode: code, lastLanguage: language });
+    });
+
+    // ── WebRTC Signaling ────────────────
+    socket.on("webrtc:join", ({ roomId }) => socket.to(roomId).emit("webrtc:join", { from: socket.userId }));
+    socket.on("webrtc:offer", ({ roomId, offer }) => socket.to(roomId).emit("webrtc:offer", { offer, from: socket.userId }));
+    socket.on("webrtc:answer", ({ roomId, answer }) => socket.to(roomId).emit("webrtc:answer", { answer, from: socket.userId }));
+    socket.on("webrtc:ice", ({ roomId, candidate }) => socket.to(roomId).emit("webrtc:ice", { candidate, from: socket.userId }));
+    socket.on("webrtc:end", ({ roomId }) => socket.to(roomId).emit("webrtc:end", { from: socket.userId }));
+    socket.on("webrtc:media", ({ roomId, videoOff, muted }) => socket.to(roomId).emit("webrtc:media", { videoOff, muted, from: socket.userId }));
 
     socket.on("disconnecting", () => {
       // Broadcast leave event to all rooms this user was in (before they are cleared)
