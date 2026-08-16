@@ -213,6 +213,14 @@ const initializeSocket = (server) => {
       socket.to(roomId).emit("partnerLeftRoom", { userId: socket.userId });
     });
 
+    socket.on("projectRoom:ping", ({ roomId }) => {
+      socket.to(roomId).emit("projectRoom:ping", { fromSocketId: socket.id, userId: socket.userId });
+    });
+
+    socket.on("projectRoom:pong", ({ targetSocketId }) => {
+      io.to(targetSocketId).emit("projectRoom:pong", { userId: socket.userId });
+    });
+
     socket.on("saveProjectState", async ({ roomId, code, language }) => {
       const ProjectRoom = require("../models/ProjectRoom");
       await ProjectRoom.findOneAndUpdate({ roomId }, { lastCode: code, lastLanguage: language });
