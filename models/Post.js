@@ -9,7 +9,7 @@ const postSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["standard", "snippet", "debug_sos"],
+      enum: ["standard", "snippet", "debug_sos", "project"],
       default: "standard",
     },
     content: {
@@ -64,6 +64,14 @@ const postSchema = new mongoose.Schema(
       clever: { type: Number, default: 0 },
       collab: { type: Number, default: 0 },
     },
+    project: {
+      title:           { type: String, maxLength: 100 },
+      techStack:       [{ type: String, trim: true, lowercase: true }],
+      roleNeeded:      { type: String, maxLength: 200 },
+      commitment:      { type: String, enum: ["one-time", "ongoing"], default: "ongoing" },
+      stage:           { type: String, enum: ["idea", "early-build", "mid-build", "needs-review"], default: "idea" },
+      isOpen:          { type: Boolean, default: true },
+    },
   },
   { timestamps: true }
 );
@@ -76,6 +84,8 @@ function arrayLimit(val) {
 postSchema.index({ authorId: 1, createdAt: -1 });
 postSchema.index({ createdAt: -1 });
 postSchema.index({ stackTags: 1, createdAt: -1 });
+postSchema.index({ type: 1, "project.isOpen": 1, createdAt: -1 });
+postSchema.index({ "project.techStack": 1, createdAt: -1 });
 
 const Post = mongoose.model("Post", postSchema);
 module.exports = Post;

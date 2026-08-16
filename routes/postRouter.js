@@ -42,6 +42,18 @@ postRouter.post("/post", userAuth, async (req, res) => {
       return res.status(400).json({ message: "Snippet posts must contain code" });
     }
 
+    if (type === "project") {
+      if (!req.body.project?.title?.trim()) {
+        return res.status(400).json({ message: "Project title is required" });
+      }
+      if (!req.body.project?.techStack?.length) {
+        return res.status(400).json({ message: "At least one tech stack item is required" });
+      }
+      if (!req.body.project?.roleNeeded?.trim()) {
+        return res.status(400).json({ message: "Role needed is required" });
+      }
+    }
+
     let rootPostId = null;
     if (forkedFrom) {
       const parentPost = await Post.findById(forkedFrom);
@@ -79,6 +91,7 @@ postRouter.post("/post", userAuth, async (req, res) => {
       type: type || "standard",
       content,
       codeSnippet: type === "snippet" ? codeSnippet : undefined,
+      project: type === "project" ? req.body.project : undefined,
       forkedFrom,
       rootPostId,
       stackTags: stackTags || [],

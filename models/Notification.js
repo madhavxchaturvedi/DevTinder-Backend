@@ -20,7 +20,7 @@ const notificationSchema = new mongoose.Schema(
     }],
     type: {
       type: String,
-      enum: ["connection_request", "request_accepted", "request_rejected", "reaction", "comment", "fork", "follow", "match"],
+      enum: ["connection_request", "request_accepted", "request_rejected", "reaction", "comment", "fork", "follow", "match", "project_join_request", "project_accepted", "project_rejected", "partner_in_room"],
       required: true,
     },
     read: {
@@ -38,6 +38,10 @@ const notificationSchema = new mongoose.Schema(
     commentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Comment",
+    },
+    projectRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProjectRequest",
     },
   },
   { timestamps: true }
