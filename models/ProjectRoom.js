@@ -39,6 +39,22 @@ const projectRoomSchema = new mongoose.Schema(
         language: String,
       },
     ],
+    tasks: [
+      {
+        title: { type: String, required: true },
+        completed: { type: Boolean, default: false },
+        assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
+    chats: [
+      {
+        senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        text: { type: String, required: true },
+        type: { type: String, default: 'user' },
+        createdAt: { type: Date, default: Date.now }
+      }
+    ]
   },
   { timestamps: true }
 );

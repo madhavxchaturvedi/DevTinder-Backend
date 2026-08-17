@@ -39,6 +39,10 @@ const initializeSocket = (server) => {
 
   io.on("connection", (socket) => {
     console.log(`🔌 User connected: ${socket.userId}`);
+    
+    // Recalculate and broadcast online users
+    const connectedUsers = new Set(Array.from(io.sockets.sockets.values()).map(s => s.userId).filter(Boolean));
+    io.emit("onlineUsers", Array.from(connectedUsers));
 
     // ── Personal notification room ──────────────────────────────
     // Every user auto-joins their own room so they can receive
@@ -233,6 +237,28 @@ const initializeSocket = (server) => {
     socket.on("webrtc:ice", ({ roomId, candidate }) => socket.to(roomId).emit("webrtc:ice", { candidate, from: socket.userId }));
     socket.on("webrtc:end", ({ roomId }) => socket.to(roomId).emit("webrtc:end", { from: socket.userId }));
     socket.on("webrtc:media", ({ roomId, videoOff, muted }) => socket.to(roomId).emit("webrtc:media", { videoOff, muted, from: socket.userId }));
+    socket.on("webrtc:reaction", ({ roomId, emoji }) => socket.to(roomId).emit("webrtc:reaction", { emoji, from: socket.userId }));
+
+    // ── Project Room Tools ────────────────
+    socket.on("room:tasks_update", async ({ roomId, tasks }) => {
+      try {
+        const ProjectRoom = require("../models/ProjectRoom");
+        await ProjectRoom.findOneAndUpdate({ roomId }, { tasks });
+        socket.to(roomId).emit("room:tasks_update", { tasks });
+      } catch (err) {
+        console.error("Error updating tasks", err);
+      }
+    });
+
+    socket.on("room:chat_message", async ({ roomId, message }) => {
+      try {
+        const ProjectRoom = require("../models/ProjectRoom");
+        await ProjectRoom.findOneAndUpdate({ roomId }, { $push: { chats: message } });
+        io.to(roomId).emit("room:chat_message", { message });
+      } catch (err) {
+        console.error("Error sending chat message", err);
+      }
+    });
 
     socket.on("disconnecting", () => {
       // Broadcast leave event to all rooms this user was in (before they are cleared)
@@ -245,6 +271,8 @@ const initializeSocket = (server) => {
 
     socket.on("disconnect", () => {
       console.log(`🔌 User disconnected: ${socket.userId}`);
+      const connectedUsers = new Set(Array.from(io.sockets.sockets.values()).map(s => s.userId).filter(Boolean));
+      io.emit("onlineUsers", Array.from(connectedUsers));
     });
   });
 

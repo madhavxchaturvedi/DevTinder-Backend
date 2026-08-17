@@ -275,7 +275,8 @@ router.get("/project/room/:roomId", userAuth, async (req, res) => {
       .populate({
         path: "projectPostId",
         populate: { path: "authorId", select: "firstName lastName photoUrl" }
-      });
+      })
+      .populate("chats.senderId", "firstName lastName photoUrl");
 
     if (!room) {
       return res.status(404).json({ message: "Room not found." });
