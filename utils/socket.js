@@ -158,8 +158,13 @@ const initializeSocket = (server) => {
     });
 
     // ── Sandbox: Handle code changes ────────────────────────────
-    socket.on("codeChange", ({ roomId, code, language }) => {
-      socket.to(roomId).emit("receiveCodeChange", { code, language });
+    socket.on("codeChange", ({ roomId, code, language, files }) => {
+      if (files) {
+        // New ProjectRoom format: relay files object
+        socket.to(roomId).emit("codeChange", { files });
+      } else {
+        socket.to(roomId).emit("receiveCodeChange", { code, language });
+      }
     });
 
     // ── Sandbox: Handle cursor movements ────────────────────────
@@ -230,6 +235,37 @@ const initializeSocket = (server) => {
       await ProjectRoom.findOneAndUpdate({ roomId }, { lastCode: code, lastLanguage: language });
     });
 
+    socket.on("saveProjectFiles", async ({ roomId, files, template }) => {
+      try {
+        const ProjectRoom = require("../models/ProjectRoom");
+        // Validate membership
+        const room = await ProjectRoom.findOne({ roomId });
+        if (!room || !room.members.some(m => m.toString() === socket.userId)) return;
+        
+        const update = { files };
+        if (template) update.template = template;
+        // Also save App.js code to lastCode for backward compat
+        if (files["/App.js"]) update.lastCode = files["/App.js"].code;
+        else if (files["/src/App.js"]) update.lastCode = files["/src/App.js"].code;
+        
+        await ProjectRoom.findOneAndUpdate({ roomId }, update);
+      } catch (err) {
+        console.error("Error saving project files", err);
+      }
+    });
+
+    socket.on("file:created", ({ roomId, path, code }) => {
+      socket.to(roomId).emit("file:created", { path, code });
+    });
+
+    socket.on("file:deleted", ({ roomId, path }) => {
+      socket.to(roomId).emit("file:deleted", { path });
+    });
+
+    socket.on("file:renamed", ({ roomId, oldPath, newPath }) => {
+      socket.to(roomId).emit("file:renamed", { oldPath, newPath });
+    });
+
     // ── WebRTC Signaling ────────────────
     socket.on("webrtc:join", ({ roomId }) => socket.to(roomId).emit("webrtc:join", { from: socket.userId }));
     socket.on("webrtc:offer", ({ roomId, offer }) => socket.to(roomId).emit("webrtc:offer", { offer, from: socket.userId }));
@@ -243,6 +279,9 @@ const initializeSocket = (server) => {
     socket.on("room:tasks_update", async ({ roomId, tasks }) => {
       try {
         const ProjectRoom = require("../models/ProjectRoom");
+        const room = await ProjectRoom.findOne({ roomId });
+        if (!room || !room.members.some(m => m.toString() === socket.userId)) return;
+
         await ProjectRoom.findOneAndUpdate({ roomId }, { tasks });
         socket.to(roomId).emit("room:tasks_update", { tasks });
       } catch (err) {
@@ -254,7 +293,7 @@ const initializeSocket = (server) => {
       try {
         const ProjectRoom = require("../models/ProjectRoom");
         await ProjectRoom.findOneAndUpdate({ roomId }, { $push: { chats: message } });
-        io.to(roomId).emit("room:chat_message", { message });
+        socket.to(roomId).emit("room:chat_message", { message });
       } catch (err) {
         console.error("Error sending chat message", err);
       }
@@ -265,6 +304,7 @@ const initializeSocket = (server) => {
       for (const room of socket.rooms) {
         if (room !== `user:${socket.userId}` && room !== socket.id) {
           socket.to(room).emit("userLeftSandbox", { userId: socket.userId });
+          socket.to(room).emit("partnerLeftRoom", { userId: socket.userId });
         }
       }
     });

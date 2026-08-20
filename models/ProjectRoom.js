@@ -32,13 +32,15 @@ const projectRoomSchema = new mongoose.Schema(
       type: String,
       default: "javascript",
     },
-    files: [
-      {
-        name: String,
-        content: String,
-        language: String,
-      },
-    ],
+    files: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    template: {
+      type: String,
+      default: "react",
+      enum: ["react", "vue", "angular"],
+    },
     tasks: [
       {
         title: { type: String, required: true },
