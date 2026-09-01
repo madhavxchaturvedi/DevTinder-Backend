@@ -225,11 +225,14 @@ router.post("/project/review/:requestId/:status", userAuth, async (req, res) => 
       }
 
       // ProjectRoom
+      const projectTitle = post?.project?.title || "Untitled Project";
+      
       await ProjectRoom.create({
         projectPostId: projectRequest.projectPostId,
         roomId: `project_${projectRequest.projectPostId}`,
         ownerId,
-        members: [ownerId, requesterId]
+        members: [ownerId, requesterId],
+        title: projectTitle
       });
 
       const notification = await Notification.create({
@@ -261,6 +264,21 @@ router.post("/project/review/:requestId/:status", userAuth, async (req, res) => 
 
       res.json({ message: "Request rejected.", data: projectRequest });
     }
+  } catch (err) {
+    res.status(400).json({ message: "Error: " + err.message });
+  }
+});
+
+// GET /project/room/public/:roomId
+router.get("/project/room/public/:roomId", async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    // Only return code, avoid leaking chat or PII to the public
+    const room = await ProjectRoom.findOne({ roomId }, "files template lastCode");
+    if (!room) {
+      return res.status(404).json({ message: "Room not found." });
+    }
+    res.json({ data: room });
   } catch (err) {
     res.status(400).json({ message: "Error: " + err.message });
   }
@@ -301,11 +319,127 @@ router.get("/project/room-by-members", userAuth, async (req, res) => {
       return res.status(400).json({ message: "userId query param is required." });
     }
 
-    const room = await ProjectRoom.findOne({
-      members: { $all: [req.user._id, userId] }
+    const rooms = await ProjectRoom.find({
+      members: { $all: [req.user._id, userId] },
+      status: { $ne: "archived" }
+    }).populate({
+      path: "projectPostId",
+      select: "content project"
+    }).sort({ updatedAt: -1 });
+
+    res.json({ data: rooms });
+  } catch (err) {
+    res.status(400).json({ message: "Error: " + err.message });
+  }
+});
+
+// GET /project/my-rooms
+router.get("/project/my-rooms", userAuth, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const query = { members: req.user._id };
+    if (status && ["active", "completed", "archived"].includes(status)) {
+      query.status = status;
+    }
+
+    const rooms = await ProjectRoom.find(query)
+      .populate("members", "firstName lastName photoUrl skills")
+      .populate({
+        path: "projectPostId",
+        select: "content project",
+        populate: { path: "authorId", select: "firstName lastName photoUrl" }
+      })
+      .sort({ updatedAt: -1 });
+
+    res.json({ data: rooms });
+  } catch (err) {
+    res.status(400).json({ message: "Error: " + err.message });
+  }
+});
+
+// PATCH /project/room/:roomId/status
+router.patch("/project/room/:roomId/status", userAuth, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { status } = req.body;
+
+    if (!["active", "completed", "archived"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status. Must be active, completed, or archived." });
+    }
+
+    const room = await ProjectRoom.findOne({ roomId });
+    if (!room) return res.status(404).json({ message: "Room not found." });
+    if (room.ownerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Only the project owner can change status." });
+    }
+
+    room.status = status;
+    await room.save();
+    res.json({ message: `Project marked as ${status}.`, data: room });
+  } catch (err) {
+    res.status(400).json({ message: "Error: " + err.message });
+  }
+});
+
+// DELETE /project/room/:roomId
+router.delete("/project/room/:roomId", userAuth, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const room = await ProjectRoom.findOne({ roomId });
+    if (!room) return res.status(404).json({ message: "Room not found." });
+    if (room.ownerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Only the project owner can delete this room." });
+    }
+    if (room.status === "completed") {
+      return res.status(400).json({ message: "Completed projects cannot be deleted. You can archive them instead." });
+    }
+
+    await ProjectRoom.deleteOne({ roomId });
+    res.json({ message: "Project room deleted successfully." });
+  } catch (err) {
+    res.status(400).json({ message: "Error: " + err.message });
+  }
+});
+
+// GET /project/my-posts — Fetch user's project posts with pending request counts
+router.get("/project/my-posts", userAuth, async (req, res) => {
+  try {
+    const posts = await Post.find({
+      authorId: req.user._id,
+      type: "project"
+    })
+    .select("content project createdAt")
+    .sort({ createdAt: -1 });
+
+    const postIds = posts.map(p => p._id);
+
+    // Count pending requests per post
+    const pendingRequests = await ProjectRequest.aggregate([
+      { $match: { projectPostId: { $in: postIds }, status: "pending" } },
+      { $group: { _id: "$projectPostId", count: { $sum: 1 } } }
+    ]);
+
+    const requestCounts = pendingRequests.reduce((acc, r) => {
+      acc[r._id.toString()] = r.count;
+      return acc;
+    }, {});
+
+    // Check which posts have been matched (have a ProjectRoom)
+    const rooms = await ProjectRoom.find({ projectPostId: { $in: postIds } }).select("projectPostId roomId");
+    const roomMap = rooms.reduce((acc, r) => {
+      acc[r.projectPostId.toString()] = r.roomId;
+      return acc;
+    }, {});
+
+    const postsWithCounts = posts.map(p => {
+      const postObj = p.toObject();
+      postObj.pendingRequestCount = requestCounts[p._id.toString()] || 0;
+      postObj.roomId = roomMap[p._id.toString()] || null;
+      postObj.isMatched = !!roomMap[p._id.toString()];
+      return postObj;
     });
 
-    res.json({ data: room });
+    res.json({ data: postsWithCounts });
   } catch (err) {
     res.status(400).json({ message: "Error: " + err.message });
   }

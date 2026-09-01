@@ -41,6 +41,8 @@ const projectRoomSchema = new mongoose.Schema(
       default: "react",
       enum: ["react", "vue", "angular"],
     },
+    status: { type: String, default: "active", enum: ["active", "completed", "archived"] },
+    title: { type: String, default: "" },
     tasks: [
       {
         title: { type: String, required: true },
