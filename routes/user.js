@@ -4,6 +4,8 @@ const ConnectionRequestModel = require("../models/connectionRequest");
 const router = express.Router();
 const User = require("../models/User");
 const Follow = require("../models/Follow");
+const Post = require("../models/Post");
+const ProjectRoom = require("../models/ProjectRoom");
 
 const userAllowedData = [
   "firstName",
@@ -103,7 +105,64 @@ router.get("/feed", userAuth, async (req, res) => {
       .skip(skip)
       .limit(limit);
 
-    res.json({ data: users });
+    // Get logged-in user's skills for comparison
+    const mySkills = (loggedInUser.skills || []).map(s => s.toLowerCase());
+
+    // Enrich and score each candidate
+    const enrichedUsers = await Promise.all(users.map(async (u) => {
+      const userObj = u.toObject();
+      const theirSkills = (userObj.skills || []).map(s => s.toLowerCase());
+      
+      // Compute shared vs other skills
+      const sharedSkills = (userObj.skills || []).filter(s => mySkills.includes(s.toLowerCase()));
+      const otherSkills = (userObj.skills || []).filter(s => !mySkills.includes(s.toLowerCase()));
+      
+      // Compatibility percent (shown on card badge)
+      const compatibilityPercent = theirSkills.length > 0 
+        ? Math.round((sharedSkills.length / theirSkills.length) * 100) 
+        : 0;
+      
+      // Activity signals
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const postCountThisWeek = await Post.countDocuments({ 
+        authorId: userObj._id, 
+        createdAt: { $gte: oneWeekAgo } 
+      });
+      const activeProjectRooms = await ProjectRoom.countDocuments({
+        members: userObj._id,
+        status: 'active'
+      });
+
+      // Fetch the latest featured post (prefer snippet or project, fallback to any)
+      const latestPost = await Post.findOne({ authorId: userObj._id })
+        .sort({ createdAt: -1 })
+        .lean();
+      
+      // Internal ranking score (NOT sent to frontend)
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const recencyBonus = userObj.updatedAt >= threeDaysAgo ? 20 
+        : userObj.updatedAt >= oneWeekAgo ? 10 : 0;
+      const activityBonus = postCountThisWeek > 0 ? 10 : 0;
+      const _rankingScore = (sharedSkills.length * 30) + activityBonus + recencyBonus;
+      
+      return {
+        ...userObj,
+        sharedSkills,
+        otherSkills,
+        compatibilityPercent,
+        activitySignals: { postCountThisWeek, activeProjectRooms },
+        featuredPost: latestPost || null,
+        _rankingScore // internal, stripped before response
+      };
+    }));
+
+    // Sort by ranking score descending
+    enrichedUsers.sort((a, b) => b._rankingScore - a._rankingScore);
+
+    // Strip internal score before sending
+    const result = enrichedUsers.map(({ _rankingScore, ...rest }) => rest);
+
+    res.json({ data: result });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -191,6 +250,92 @@ router.post("/user/unfollow/:targetId", userAuth, async (req, res) => {
     res.json({ message: "Successfully unfollowed user" });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /user/:userId/latest-post — Fetch a single user's latest featured post
+router.get("/user/:userId/latest-post", userAuth, async (req, res) => {
+  try {
+    const latestPost = await Post.findOne({ authorId: req.params.userId })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({ data: latestPost });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// GET /user/best-matches — Top 4 users by compatibility score
+router.get("/user/best-matches", userAuth, async (req, res) => {
+  try {
+    const loggedInUser = req.user;
+    const mySkills = (loggedInUser.skills || []).map(s => s.toLowerCase());
+    
+    if (mySkills.length === 0) {
+      return res.json({ data: [] });
+    }
+
+    // Get users who share at least one skill
+    const connectionRequests = await ConnectionRequestModel.find({
+      $or: [{ fromUserId: loggedInUser._id }, { toUserId: loggedInUser._id }],
+    }).select("fromUserId toUserId");
+
+    const excludeIds = new Set();
+    connectionRequests.forEach((r) => {
+      excludeIds.add(r.fromUserId.toString());
+      excludeIds.add(r.toUserId.toString());
+    });
+    excludeIds.add(loggedInUser._id.toString());
+
+    const candidates = await User.find({
+      _id: { $nin: Array.from(excludeIds) },
+      skills: { $in: mySkills.map(s => new RegExp(`^${s}$`, "i")) }
+    })
+    .select("firstName lastName photoUrl skills")
+    .limit(20);
+
+    const scored = candidates.map(u => {
+      const userObj = u.toObject();
+      const sharedSkills = (userObj.skills || []).filter(s => mySkills.includes(s.toLowerCase()));
+      const compatibilityPercent = userObj.skills?.length > 0
+        ? Math.round((sharedSkills.length / userObj.skills.length) * 100)
+        : 0;
+      return { ...userObj, sharedSkills, compatibilityPercent };
+    });
+
+    scored.sort((a, b) => b.compatibilityPercent - a.compatibilityPercent);
+
+    res.json({ data: scored.slice(0, 4) });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// GET /user/network-stats — Connection count, pending count, weekly connections
+router.get("/user/network-stats", userAuth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [connectionCount, pendingCount, connectionsThisWeek] = await Promise.all([
+      ConnectionRequestModel.countDocuments({
+        $or: [{ fromUserId: userId }, { toUserId: userId }],
+        status: "accepted"
+      }),
+      ConnectionRequestModel.countDocuments({
+        toUserId: userId,
+        status: "interested"
+      }),
+      ConnectionRequestModel.countDocuments({
+        $or: [{ fromUserId: userId }, { toUserId: userId }],
+        status: "accepted",
+        updatedAt: { $gte: oneWeekAgo }
+      })
+    ]);
+
+    res.json({ connectionCount, pendingCount, connectionsThisWeek });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
