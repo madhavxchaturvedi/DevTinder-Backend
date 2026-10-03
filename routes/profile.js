@@ -102,4 +102,71 @@ router.post(
   }
 );
 
+// POST /profile/upload-cover
+// Accepts multipart/form-data file under the field name "cover"
+// Uploads to Cloudinary as a landscape banner and updates coverPhoto in DB
+router.post(
+  "/profile/upload-cover",
+  userAuth,
+  upload.single("cover"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const uploadFromBuffer = () =>
+        new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: "devtinder/cover-photos",
+              transformation: [
+                { width: 1200, height: 400, crop: "fill", gravity: "auto" },
+                { quality: "auto", fetch_format: "auto" },
+              ],
+            },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          );
+
+          const bufferStream = new streamifier.Readable();
+          bufferStream.push(req.file.buffer);
+          bufferStream.push(null);
+          bufferStream.pipe(uploadStream);
+        });
+
+      const result = await uploadFromBuffer();
+
+      const loggedInUser = req.user;
+      loggedInUser.coverPhoto = result.secure_url;
+      await loggedInUser.save();
+
+      res.json({
+        message: "Cover photo uploaded successfully",
+        coverPhoto: result.secure_url,
+      });
+    } catch (err) {
+      console.error("Cover upload error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+// PATCH /profile/toggle-pair — Toggle "Open to Pair" status
+router.patch("/profile/toggle-pair", userAuth, async (req, res) => {
+  try {
+    const loggedInUser = req.user;
+    loggedInUser.openToPair = !loggedInUser.openToPair;
+    await loggedInUser.save();
+    res.json({
+      message: loggedInUser.openToPair ? "You're now open to pair!" : "Pairing turned off",
+      openToPair: loggedInUser.openToPair,
+    });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 module.exports = router;

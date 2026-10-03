@@ -336,4 +336,41 @@ postRouter.delete("/post/:id", userAuth, async (req, res) => {
   }
 });
 
+// PATCH /post/:id/pin — Toggle pin-to-profile for snippet posts (max 3)
+postRouter.patch("/post/:id/pin", userAuth, async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).json({ message: "Post not found" });
+
+    if (post.authorId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "You can only pin your own posts" });
+    }
+
+    if (!post.isPinnedToProfile && post.type !== "snippet") {
+      return res.status(400).json({ message: "Only snippet posts can be pinned" });
+    }
+
+    if (!post.isPinnedToProfile) {
+      // Check max 3 pinned
+      const pinnedCount = await Post.countDocuments({
+        authorId: req.user._id,
+        isPinnedToProfile: true,
+      });
+      if (pinnedCount >= 3) {
+        return res.status(400).json({ message: "You can pin a maximum of 3 posts to your profile" });
+      }
+    }
+
+    post.isPinnedToProfile = !post.isPinnedToProfile;
+    await post.save();
+
+    res.json({
+      message: post.isPinnedToProfile ? "Post pinned to profile" : "Post unpinned from profile",
+      isPinnedToProfile: post.isPinnedToProfile,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = postRouter;

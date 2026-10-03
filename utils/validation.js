@@ -20,6 +20,12 @@ const validateMyProfileEditData = (req) => {
     "gender",
     "age",
     "skills",
+    "headline",
+    "location",
+    "coverPhoto",
+    "twitterUrl",
+    "portfolioUrl",
+    "openToPair",
   ];
 
   const isEditAllowed = Object.keys(req.body).every((field) =>

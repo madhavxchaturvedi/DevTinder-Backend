@@ -309,10 +309,20 @@ const initializeSocket = (server) => {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       console.log(`🔌 User disconnected: ${socket.userId}`);
       const connectedUsers = new Set(Array.from(io.sockets.sockets.values()).map(s => s.userId).filter(Boolean));
       io.emit("onlineUsers", Array.from(connectedUsers));
+
+      // Persist lastSeen if user is fully offline (no other tabs)
+      if (!connectedUsers.has(socket.userId)) {
+        try {
+          const User = require("../models/User");
+          await User.findByIdAndUpdate(socket.userId, { lastSeen: new Date() });
+        } catch (err) {
+          console.error("Error updating lastSeen:", err);
+        }
+      }
     });
   });
 

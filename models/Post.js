@@ -58,6 +58,10 @@ const postSchema = new mongoose.Schema(
       enum: ["safe", "flagged", "hidden"],
       default: "safe",
     },
+    isPinnedToProfile: {
+      type: Boolean,
+      default: false,
+    },
     reactions: {
       fire: { type: Number, default: 0 },
       bug: { type: Number, default: 0 },

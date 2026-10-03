@@ -88,6 +88,35 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    headline: {
+      type: String,
+      maxLength: 120,
+    },
+    location: {
+      type: String,
+      maxLength: 100,
+    },
+    coverPhoto: {
+      type: String,
+      validate(value) {
+        if (value && !validator.isURL(value)) {
+          throw new Error("Invalid Cover Photo URL: " + value);
+        }
+      },
+    },
+    twitterUrl: {
+      type: String,
+    },
+    portfolioUrl: {
+      type: String,
+    },
+    openToPair: {
+      type: Boolean,
+      default: false,
+    },
+    lastSeen: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

@@ -15,6 +15,9 @@ const userAllowedData = [
   "age",
   "about",
   "gender",
+  "headline",
+  "location",
+  "openToPair",
 ];
 
 router.get("/user/request/received", userAuth, async (req, res) => {
