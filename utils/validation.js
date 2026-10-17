@@ -26,6 +26,7 @@ const validateMyProfileEditData = (req) => {
     "twitterUrl",
     "portfolioUrl",
     "openToPair",
+    "profileComplete",
   ];
 
   const isEditAllowed = Object.keys(req.body).every((field) =>

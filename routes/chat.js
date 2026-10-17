@@ -10,9 +10,9 @@ router.get("/chat/:targetId", userAuth, async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
     const { targetId } = req.params;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = (page - 1) * limit;
+    const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
 
     // Security: Only allow chat between accepted connections
     const connection = await ConnectionRequestModel.findOne({
@@ -25,7 +25,7 @@ router.get("/chat/:targetId", userAuth, async (req, res) => {
     if (!connection) {
       return res
         .status(403)
-        .json({ message: "You can only chat with your connections." });
+        .json({ message: "You can only chat with your connections.", success: false });
     }
 
     // Fetch the target user's basic info
@@ -34,19 +34,19 @@ router.get("/chat/:targetId", userAuth, async (req, res) => {
     );
 
     if (!targetUser) {
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "User not found.", success: false });
     }
 
-    // Fetch messages (both directions), newest last
+    // Fetch messages (both directions), newest first
     const messages = await Message.find({
       $or: [
         { senderId: loggedInUserId, receiverId: targetId },
         { senderId: targetId, receiverId: loggedInUserId },
       ],
     })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
+      .limit(limitNum)
       .populate("senderId", "firstName photoUrl");
 
     // Mark incoming messages as seen
@@ -55,9 +55,9 @@ router.get("/chat/:targetId", userAuth, async (req, res) => {
       { $set: { seen: true } }
     );
 
-    res.json({ messages, targetUser });
+    res.json({ messages, targetUser, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 

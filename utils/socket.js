@@ -107,6 +107,28 @@ const initializeSocket = (server) => {
       try {
         if (!text) return;
 
+        const connection = await ConnectionRequestModel.findOne({
+          $or: [
+            {
+              fromUserId: socket.userId,
+              toUserId: targetId,
+              status: "accepted",
+            },
+            {
+              fromUserId: targetId,
+              toUserId: socket.userId,
+              status: "accepted",
+            },
+          ],
+        });
+
+        if (!connection) {
+          socket.emit("error", {
+            message: "You can only chat with your connections.",
+          });
+          return;
+        }
+
         const newMessage = await Message.create({
           senderId: socket.userId,
           receiverId: targetId,
@@ -119,6 +141,7 @@ const initializeSocket = (server) => {
         io.to(roomId).emit("receiveMessage", populated);
       } catch (err) {
         console.error("system message error:", err);
+        socket.emit("error", { message: "Failed to send system message." });
       }
     });
 
@@ -199,13 +222,18 @@ const initializeSocket = (server) => {
 
     // ── Project Room ────────────────
     socket.on("enterProjectRoom", async ({ roomId, projectTitle }) => {
-      socket.join(roomId);
-      socket.to(roomId).emit("partnerEnteredRoom", { userId: socket.userId });
-      
-      // Notify partner even if they're not in the room yet
-      const ProjectRoom = require("../models/ProjectRoom");
-      const room = await ProjectRoom.findOne({ roomId });
-      if (room) {
+      try {
+        const ProjectRoom = require("../models/ProjectRoom");
+        const room = await ProjectRoom.findOne({ roomId });
+        if (!room || !room.members.some((m) => m.toString() === (socket.userId || "").toString())) {
+          socket.emit("error", { message: "You are not a member of this room." });
+          return;
+        }
+
+        socket.join(roomId);
+        socket.to(roomId).emit("partnerEnteredRoom", { userId: socket.userId });
+        
+        // Notify partner even if they're not in the room yet
         const partnerId = room.members.find(m => m.toString() !== socket.userId.toString());
         if (partnerId) {
           io.to(`user:${partnerId}`).emit("newNotification", {
@@ -214,6 +242,8 @@ const initializeSocket = (server) => {
             roomId
           });
         }
+      } catch (err) {
+        console.error("enterProjectRoom error:", err);
       }
     });
 
@@ -231,8 +261,16 @@ const initializeSocket = (server) => {
     });
 
     socket.on("saveProjectState", async ({ roomId, code, language }) => {
-      const ProjectRoom = require("../models/ProjectRoom");
-      await ProjectRoom.findOneAndUpdate({ roomId }, { lastCode: code, lastLanguage: language });
+      try {
+        const ProjectRoom = require("../models/ProjectRoom");
+        const roomQuery = { roomId };
+        const room = await ProjectRoom.findOne(roomQuery);
+        if (!room || !room.members.some((m) => m.toString() === socket.userId)) return;
+
+        await ProjectRoom.findOneAndUpdate({ roomId }, { lastCode: code, lastLanguage: language });
+      } catch (err) {
+        console.error("Error saving project state", err);
+      }
     });
 
     socket.on("saveProjectFiles", async ({ roomId, files, template }) => {
@@ -292,6 +330,9 @@ const initializeSocket = (server) => {
     socket.on("room:chat_message", async ({ roomId, message }) => {
       try {
         const ProjectRoom = require("../models/ProjectRoom");
+        const room = await ProjectRoom.findOne({ roomId });
+        if (!room || !room.members.some((m) => m.toString() === socket.userId)) return;
+
         await ProjectRoom.findOneAndUpdate({ roomId }, { $push: { chats: message } });
         socket.to(roomId).emit("room:chat_message", { message });
       } catch (err) {
