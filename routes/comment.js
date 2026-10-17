@@ -37,20 +37,20 @@ commentRouter.get("/post/:id/comments", userAuth, async (req, res) => {
   try {
     const postId = req.params.id;
     const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
 
     const isVisible = await checkPostVisibility(post, req.user._id);
     if (!isVisible) {
-      return res.status(403).json({ message: "You don't have permission to view this post" });
+      return res.status(403).json({ message: "You don't have permission to view this post", success: false });
     }
 
     const comments = await Comment.find({ postId })
       .populate("authorId", "firstName lastName photoUrl")
       .sort({ createdAt: 1 });
 
-    res.json({ comments });
+    res.json({ comments, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -59,14 +59,14 @@ commentRouter.post("/post/:id/comment", userAuth, async (req, res) => {
   try {
     const postId = req.params.id;
     const { text } = req.body;
-    if (!text || !text.trim()) return res.status(400).json({ message: "Comment text is required" });
+    if (!text || !text.trim()) return res.status(400).json({ message: "Comment text is required", success: false });
 
     const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
 
     const isVisible = await checkPostVisibility(post, req.user._id);
     if (!isVisible) {
-      return res.status(403).json({ message: "You don't have permission to comment on this post" });
+      return res.status(403).json({ message: "You don't have permission to comment on this post", success: false });
     }
 
     const comment = new Comment({
@@ -95,9 +95,9 @@ commentRouter.post("/post/:id/comment", userAuth, async (req, res) => {
       }
     }
 
-    res.status(201).json({ message: "Comment added", data: populatedComment });
+    res.status(201).json({ message: "Comment added", data: populatedComment, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -106,32 +106,32 @@ commentRouter.patch("/comment/:id/resolve", userAuth, async (req, res) => {
   try {
     const commentId = req.params.id;
     const comment = await Comment.findById(commentId).populate("postId");
-    if (!comment) return res.status(404).json({ message: "Comment not found" });
+    if (!comment) return res.status(404).json({ message: "Comment not found", success: false });
 
     const post = comment.postId;
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
 
     // Enforce Debug SOS type
     if (post.type !== "debug_sos") {
-      return res.status(400).json({ message: "Only Debug SOS posts can have resolved answers" });
+      return res.status(400).json({ message: "Only Debug SOS posts can have resolved answers", success: false });
     }
 
     // Enforce Authorization: only post author can mark as resolved
     if (post.authorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "Only the author of the SOS post can mark an answer as resolved" });
+      return res.status(403).json({ message: "Only the author of the SOS post can mark an answer as resolved", success: false });
     }
 
     // You can't resolve your own comment to game the system
     if (comment.authorId.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: "You cannot mark your own comment as the resolved answer" });
+      return res.status(400).json({ message: "You cannot mark your own comment as the resolved answer", success: false });
     }
 
     if (comment.isResolvedAnswer) {
-      return res.status(400).json({ message: "This comment is already marked as resolved" });
+      return res.status(400).json({ message: "This comment is already marked as resolved", success: false });
     }
 
     if (post.isResolved) {
-      return res.status(400).json({ message: "This post has already been resolved" });
+      return res.status(400).json({ message: "This post has already been resolved", success: false });
     }
 
     comment.isResolvedAnswer = true;
@@ -143,9 +143,9 @@ commentRouter.patch("/comment/:id/resolve", userAuth, async (req, res) => {
     // Increment helpfulAnswers on the comment author's profile
     await User.findByIdAndUpdate(comment.authorId, { $inc: { helpfulAnswers: 1 } });
 
-    res.json({ message: "Answer marked as resolved", data: comment });
+    res.json({ message: "Answer marked as resolved", data: comment, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 

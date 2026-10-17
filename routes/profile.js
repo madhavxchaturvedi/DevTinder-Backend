@@ -3,8 +3,7 @@ const router = express.Router();
 const multer = require("multer");
 const { userAuth } = require("../middlewares/auth");
 const { validateMyProfileEditData } = require("../utils/validation");
-const cloudinary = require("../utils/cloudinary");
-const streamifier = require("stream");
+const { uploadStreamFromBuffer } = require("../utils/cloudinary");
 
 // Multer: store in memory, images only, max 5 MB
 const upload = multer({
@@ -21,9 +20,15 @@ const upload = multer({
 router.get("/profile/view", userAuth, async (req, res) => {
   try {
     const user = req.user;
-    res.send(user);
+    const userData = user.toJSON();
+    res.json({
+      message: "Profile fetched successfully",
+      data: userData,
+      success: true,
+      ...userData,
+    });
   } catch (err) {
-    res.status(400).send("ERROR : " + err.message);
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -41,9 +46,10 @@ router.post("/profile/edit", userAuth, async (req, res) => {
     res.json({
       message: `${loggedInUser.firstName}, your profile updated successfuly`,
       data: loggedInUser,
+      success: true,
     });
   } catch (err) {
-    res.status(400).send("ERROR : " + err.message);
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -57,34 +63,16 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return res.status(400).json({ message: "No file uploaded", success: false });
       }
 
-      // Upload buffer to Cloudinary via upload_stream
-      const uploadFromBuffer = () =>
-        new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: "devtinder/profile-photos",
-              transformation: [
-                { width: 600, height: 600, crop: "fill", gravity: "face" },
-                { quality: "auto", fetch_format: "auto" },
-              ],
-            },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve(result);
-            }
-          );
-
-          // Pipe the buffer into the upload stream
-          const bufferStream = new streamifier.Readable();
-          bufferStream.push(req.file.buffer);
-          bufferStream.push(null);
-          bufferStream.pipe(uploadStream);
-        });
-
-      const result = await uploadFromBuffer();
+      const result = await uploadStreamFromBuffer(req.file.buffer, {
+        folder: "devtinder/profile-photos",
+        transformation: [
+          { width: 600, height: 600, crop: "fill", gravity: "face" },
+          { quality: "auto", fetch_format: "auto" },
+        ],
+      });
 
       // Update user's photoUrl in DB
       const loggedInUser = req.user;
@@ -94,10 +82,12 @@ router.post(
       res.json({
         message: "Photo uploaded successfully",
         photoUrl: result.secure_url,
+        data: loggedInUser,
+        success: true,
       });
     } catch (err) {
       console.error("Upload error:", err);
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: err.message, success: false });
     }
   }
 );
@@ -112,32 +102,16 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+        return res.status(400).json({ message: "No file uploaded", success: false });
       }
 
-      const uploadFromBuffer = () =>
-        new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: "devtinder/cover-photos",
-              transformation: [
-                { width: 1200, height: 400, crop: "fill", gravity: "auto" },
-                { quality: "auto", fetch_format: "auto" },
-              ],
-            },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve(result);
-            }
-          );
-
-          const bufferStream = new streamifier.Readable();
-          bufferStream.push(req.file.buffer);
-          bufferStream.push(null);
-          bufferStream.pipe(uploadStream);
-        });
-
-      const result = await uploadFromBuffer();
+      const result = await uploadStreamFromBuffer(req.file.buffer, {
+        folder: "devtinder/cover-photos",
+        transformation: [
+          { width: 1200, height: 400, crop: "fill", gravity: "auto" },
+          { quality: "auto", fetch_format: "auto" },
+        ],
+      });
 
       const loggedInUser = req.user;
       loggedInUser.coverPhoto = result.secure_url;
@@ -146,10 +120,12 @@ router.post(
       res.json({
         message: "Cover photo uploaded successfully",
         coverPhoto: result.secure_url,
+        data: loggedInUser,
+        success: true,
       });
     } catch (err) {
       console.error("Cover upload error:", err);
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: err.message, success: false });
     }
   }
 );
@@ -163,9 +139,10 @@ router.patch("/profile/toggle-pair", userAuth, async (req, res) => {
     res.json({
       message: loggedInUser.openToPair ? "You're now open to pair!" : "Pairing turned off",
       openToPair: loggedInUser.openToPair,
+      success: true,
     });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 

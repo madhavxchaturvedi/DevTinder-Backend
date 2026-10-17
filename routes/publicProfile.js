@@ -23,7 +23,7 @@ router.get("/user/:userId", userAuth, async (req, res) => {
 
     const targetUser = await User.findById(userId).select(PUBLIC_FIELDS);
     if (!targetUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "User not found", success: false });
     }
 
     // ── Connection status ──────────────────────────────────────
@@ -203,7 +203,7 @@ router.get("/user/:userId", userAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("Profile fetch error:", err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 

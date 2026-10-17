@@ -18,12 +18,12 @@ router.post("/request/send/:status/:toUserId", userAuth, async (req, res) => {
     if (!isAllowedStatus.includes(status)) {
       return res
         .status(400)
-        .json({ message: "Invalid Status Type: " + status });
+        .json({ message: "Invalid Status Type: " + status, success: false });
     }
 
     const toUser = await User.findById(toUserId);
     if (!toUser) {
-      return res.status(400).json({ message: "User does not Exist!" });
+      return res.status(400).json({ message: "User does not Exist!", success: false });
     }
 
     const existingConnectionReqest = await ConnectionRequestModel.findOne({
@@ -57,17 +57,18 @@ router.post("/request/send/:status/:toUserId", userAuth, async (req, res) => {
               message: "It's a Match! 🎉", 
               isMatch: true, 
               matchedUser: toUser,
-              data 
+              data,
+              success: true,
             });
           } else if (status === "ignored") {
             // I rejected their request from the feed
             existingConnectionReqest.status = "rejected";
             const data = await existingConnectionReqest.save();
-            return res.json({ message: "Request Rejected", data });
+            return res.json({ message: "Request Rejected", data, success: true });
           }
         }
       }
-      return res.status(400).json({ message: "Connection Request Already Exists!" });
+      return res.status(400).json({ message: "Connection Request Already Exists!", success: false });
     }
 
     const connectionRequest = new ConnectionRequestModel({
@@ -101,9 +102,9 @@ router.post("/request/send/:status/:toUserId", userAuth, async (req, res) => {
       }
     }
 
-    res.json({ message: "Connection Request Send SuccessFully", data });
+    res.json({ message: "Connection Request Send SuccessFully", data, success: true });
   } catch (err) {
-    res.status(400).send("ERROR : " + err.message);
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -118,7 +119,7 @@ router.post(
       const allowedStatus = ["accepted", "rejected"];
 
       if (!allowedStatus.includes(status)) {
-        return res.status(400).json({ message: "Status not Valid!" });
+        return res.status(400).json({ message: "Status not Valid!", success: false });
       }
 
       const connectionRequest = await ConnectionRequestModel.findOne({
@@ -128,9 +129,46 @@ router.post(
       });
 
       if (!connectionRequest) {
+        try {
+          const ProjectRequest = require("../models/ProjectRequest");
+          const ProjectRoom = require("../models/ProjectRoom");
+          const projectRequest = await ProjectRequest.findById(requestId);
+          if (projectRequest && projectRequest.ownerId.toString() === loggedInUser._id.toString()) {
+            if (status === "accepted") {
+              if (loggedInUser.isPremium !== true) {
+                const activeRooms = await ProjectRoom.countDocuments({
+                  $or: [{ ownerId: loggedInUser._id }, { members: loggedInUser._id }],
+                  status: { $nin: ["completed", "archived"] },
+                });
+                if (activeRooms >= 1) {
+                  return res.status(403).json({
+                    success: false,
+                    message: "Free tier is limited to 1 active room. Upgrade to Pro for unlimited rooms.",
+                  });
+                }
+              }
+
+              const requesterId = projectRequest.requesterId?._id || projectRequest.requesterId;
+              const requesterUser = await User.findById(requesterId);
+              if (requesterUser && requesterUser.isPremium !== true) {
+                const requesterActiveRooms = await ProjectRoom.countDocuments({
+                  $or: [{ ownerId: requesterId }, { members: requesterId }],
+                  status: { $nin: ["completed", "archived"] },
+                });
+                if (requesterActiveRooms >= 1) {
+                  return res.status(403).json({
+                    success: false,
+                    message: "Free tier is limited to 1 active room. Upgrade to Pro for unlimited rooms.",
+                  });
+                }
+              }
+            }
+          }
+        } catch (_) {}
+
         return res
           .status(404)
-          .json({ message: "Connection Request Not Found!" });
+          .json({ message: "Connection request not found", success: false });
       }
 
       connectionRequest.status = status;
@@ -159,9 +197,9 @@ router.post(
         }
       }
 
-      res.json({ message: "Connection Request " + status, data });
+      res.json({ message: "Connection Request " + status, data, success: true });
     } catch (err) {
-      res.status(400).json({ message: "Error:" + err.message });
+      res.status(400).json({ message: err.message, success: false });
     }
   }
 );
