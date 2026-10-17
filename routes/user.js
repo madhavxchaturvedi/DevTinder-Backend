@@ -29,9 +29,9 @@ router.get("/user/request/received", userAuth, async (req, res) => {
       status: "interested",
     }).populate("fromUserId", userAllowedData);
 
-    res.json({ message: "Data Fetched Successfully", data: connectionRequest });
+    res.json({ message: "Data Fetched Successfully", data: connectionRequest, success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -55,9 +55,37 @@ router.get("/user/connections", userAuth, async (req, res) => {
       return row.fromUserId;
     });
 
-    res.json({ data });
+    res.json({ data, success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
+  }
+});
+
+// GET /user/search?q=... — Search users by firstName, lastName, skills, headline
+router.get("/user/search", userAuth, async (req, res) => {
+  try {
+    const rawQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!rawQ) {
+      return res.json({ message: "Search results", data: [], success: true });
+    }
+
+    const escaped = rawQ.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "i");
+    const users = await User.find({
+      _id: { $ne: req.user._id },
+      $or: [
+        { firstName: regex },
+        { lastName: regex },
+        { skills: regex },
+        { headline: regex },
+      ],
+    })
+      .select("firstName lastName photoUrl headline skills location")
+      .limit(20);
+
+    res.json({ message: "Search results", data: users, success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -165,9 +193,9 @@ router.get("/feed", userAuth, async (req, res) => {
     // Strip internal score before sending
     const result = enrichedUsers.map(({ _rankingScore, ...rest }) => rest);
 
-    res.json({ data: result });
+    res.json({ data: result, success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -179,12 +207,12 @@ router.post("/user/follow/:targetId", userAuth, async (req, res) => {
     const targetId = req.params.targetId;
 
     if (loggedInUserId.toString() === targetId.toString()) {
-      return res.status(400).json({ message: "You cannot follow yourself" });
+      return res.status(400).json({ message: "You cannot follow yourself", success: false });
     }
 
     const targetUser = await User.findById(targetId);
     if (!targetUser) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ message: "User not found", success: false });
     }
 
     // Check if already following
@@ -194,7 +222,7 @@ router.post("/user/follow/:targetId", userAuth, async (req, res) => {
     });
 
     if (existingFollow) {
-      return res.status(400).json({ message: "Already following this user" });
+      return res.status(400).json({ message: "Already following this user", success: false });
     }
 
     const follow = new Follow({
@@ -206,7 +234,7 @@ router.post("/user/follow/:targetId", userAuth, async (req, res) => {
       await follow.save();
     } catch (saveErr) {
       if (saveErr.code === 11000) {
-        return res.status(400).json({ message: "Already following this user" });
+        return res.status(400).json({ message: "Already following this user", success: false });
       }
       throw saveErr;
     }
@@ -226,9 +254,9 @@ router.post("/user/follow/:targetId", userAuth, async (req, res) => {
     const io = req.app.get("io");
     if (io) io.to(`user:${targetId}`).emit("newNotification", notification);
 
-    res.json({ message: "Successfully followed user", data: follow });
+    res.json({ message: "Successfully followed user", data: follow, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -243,16 +271,16 @@ router.post("/user/unfollow/:targetId", userAuth, async (req, res) => {
     });
 
     if (!deletedFollow) {
-      return res.status(400).json({ message: "You are not following this user" });
+      return res.status(400).json({ message: "You are not following this user", success: false });
     }
 
     // Decrement counts (ensure they don't go below 0 just in case)
     await User.findByIdAndUpdate(loggedInUserId, { $inc: { followingCount: -1 } });
     await User.findByIdAndUpdate(targetId, { $inc: { followersCount: -1 } });
 
-    res.json({ message: "Successfully unfollowed user" });
+    res.json({ message: "Successfully unfollowed user", success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -262,9 +290,9 @@ router.get("/user/:userId/latest-post", userAuth, async (req, res) => {
     const latestPost = await Post.findOne({ authorId: req.params.userId })
       .sort({ createdAt: -1 })
       .lean();
-    res.json({ data: latestPost });
+    res.json({ data: latestPost, success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -275,7 +303,7 @@ router.get("/user/best-matches", userAuth, async (req, res) => {
     const mySkills = (loggedInUser.skills || []).map(s => s.toLowerCase());
     
     if (mySkills.length === 0) {
-      return res.json({ data: [] });
+      return res.json({ data: [], success: true });
     }
 
     // Get users who share at least one skill
@@ -308,9 +336,9 @@ router.get("/user/best-matches", userAuth, async (req, res) => {
 
     scored.sort((a, b) => b.compatibilityPercent - a.compatibilityPercent);
 
-    res.json({ data: scored.slice(0, 4) });
+    res.json({ data: scored.slice(0, 4), success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 
@@ -336,9 +364,9 @@ router.get("/user/network-stats", userAuth, async (req, res) => {
       })
     ]);
 
-    res.json({ connectionCount, pendingCount, connectionsThisWeek });
+    res.json({ connectionCount, pendingCount, connectionsThisWeek, success: true });
   } catch (err) {
-    res.status(400).json({ message: err.message });
+    res.status(400).json({ message: err.message, success: false });
   }
 });
 

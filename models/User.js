@@ -35,8 +35,8 @@ const userSchema = new mongoose.Schema(
       },
     },
     age: {
-      type: String,
-      minmum: 16,
+      type: Number,
+      min: 16,
     },
     gender: {
       type: String,
@@ -57,7 +57,7 @@ const userSchema = new mongoose.Schema(
     membershipType: {
       type: String,
       enum: {
-        values: ["silver", "gold"],
+        values: ["silver", "gold", "pro", "pro_annual", "free"],
         message: `{VALUE} is not a valid membership type`,
       },
     },
@@ -114,18 +114,48 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    profileComplete: {
+      type: Boolean,
+      default: false,
+    },
     lastSeen: {
       type: Date,
     },
   },
   {
     timestamps: true,
+    toJSON: {
+      transform: function (doc, ret) {
+        delete ret.password;
+        return ret;
+      },
+    },
+    toObject: {
+      transform: function (doc, ret) {
+        delete ret.password;
+        return ret;
+      },
+    },
   },
 );
 
+userSchema.set("toJSON", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    return ret;
+  },
+});
+
+userSchema.set("toObject", {
+  transform: function (doc, ret) {
+    delete ret.password;
+    return ret;
+  },
+});
+
 userSchema.methods.getJWT = async function () {
   const user = this;
-  const token = await jwt.sign({ _id: user._id }, "devtinder@2006", {
+  const token = await jwt.sign({ _id: user._id }, process.env.JWT_SECRET_KEY, {
     expiresIn: "14d",
   });
 
