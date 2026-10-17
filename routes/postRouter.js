@@ -4,10 +4,12 @@ const { userAuth } = require("../middlewares/auth");
 const Post = require("../models/Post");
 const Follow = require("../models/Follow");
 const Reaction = require("../models/Reaction");
+const Comment = require("../models/Comment");
+const ProjectRequest = require("../models/ProjectRequest");
+const ProjectRoom = require("../models/ProjectRoom");
 const ConnectionRequest = require("../models/connectionRequest");
 const multer = require("multer");
-const cloudinary = require("../utils/cloudinary");
-const streamifier = require("stream");
+const { uploadStreamFromBuffer } = require("../utils/cloudinary");
 
 // Multer config for post uploads
 const upload = multer({
@@ -35,29 +37,29 @@ postRouter.post("/post", userAuth, async (req, res) => {
     const { type, content, codeSnippet, forkedFrom, stackTags, visibility, images, documentUrl } = req.body;
     
     if (!content) {
-      return res.status(400).json({ message: "Post content is required" });
+      return res.status(400).json({ message: "Post content is required", success: false });
     }
 
     if (type === "snippet" && (!codeSnippet || !codeSnippet.code)) {
-      return res.status(400).json({ message: "Snippet posts must contain code" });
+      return res.status(400).json({ message: "Snippet posts must contain code", success: false });
     }
 
     if (type === "project") {
       if (!req.body.project?.title?.trim()) {
-        return res.status(400).json({ message: "Project title is required" });
+        return res.status(400).json({ message: "Project title is required", success: false });
       }
       if (!req.body.project?.techStack?.length) {
-        return res.status(400).json({ message: "At least one tech stack item is required" });
+        return res.status(400).json({ message: "At least one tech stack item is required", success: false });
       }
       if (!req.body.project?.roleNeeded?.trim()) {
-        return res.status(400).json({ message: "Role needed is required" });
+        return res.status(400).json({ message: "Role needed is required", success: false });
       }
     }
 
     let rootPostId = null;
     if (forkedFrom) {
       const parentPost = await Post.findById(forkedFrom);
-      if (!parentPost) return res.status(404).json({ message: "Parent post not found" });
+      if (!parentPost) return res.status(404).json({ message: "Parent post not found", success: false });
 
       // Enforce visibility check before allowing fork
       if (parentPost.visibility === "followers") {
@@ -65,7 +67,7 @@ postRouter.post("/post", userAuth, async (req, res) => {
         if (parentPost.authorId.toString() !== req.user._id.toString()) {
           const isFollower = await Follow.findOne({ followerId: req.user._id, targetId: parentPost.authorId });
           if (!isFollower) {
-            return res.status(403).json({ message: "You are not allowed to view or fork this post" });
+            return res.status(403).json({ message: "You are not allowed to view or fork this post", success: false });
           }
         }
       } else if (parentPost.visibility === "matches") {
@@ -78,7 +80,7 @@ postRouter.post("/post", userAuth, async (req, res) => {
             ]
           });
           if (!isMatch) {
-            return res.status(403).json({ message: "You must be a match to view or fork this post" });
+            return res.status(403).json({ message: "You must be a match to view or fork this post", success: false });
           }
         }
       }
@@ -125,7 +127,7 @@ postRouter.post("/post", userAuth, async (req, res) => {
       data: post,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -138,23 +140,8 @@ postRouter.post(
     try {
       const files = req.files;
       if (!files || (!files.images && !files.document)) {
-        return res.status(400).json({ message: "No files provided" });
+        return res.status(400).json({ message: "No files provided", success: false });
       }
-
-      const uploadToCloudinary = (buffer, folder, resource_type = "auto") =>
-        new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            { folder, resource_type, quality: "auto" },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve(result.secure_url);
-            }
-          );
-          const bufferStream = new streamifier.Readable();
-          bufferStream.push(buffer);
-          bufferStream.push(null);
-          bufferStream.pipe(uploadStream);
-        });
 
       const uploadPromises = [];
       const resultMap = { images: [], documentUrl: null };
@@ -163,9 +150,11 @@ postRouter.post(
       if (files.images) {
         files.images.forEach((file) => {
           uploadPromises.push(
-            uploadToCloudinary(file.buffer, "devtinder/posts/images", "image").then(
-              (url) => resultMap.images.push(url)
-            )
+            uploadStreamFromBuffer(file.buffer, {
+              folder: "devtinder/posts/images",
+              resource_type: "image",
+              quality: "auto",
+            }).then((result) => resultMap.images.push(result.secure_url))
           );
         });
       }
@@ -173,9 +162,10 @@ postRouter.post(
       // Upload Document
       if (files.document) {
         uploadPromises.push(
-          uploadToCloudinary(files.document[0].buffer, "devtinder/posts/docs", "raw").then(
-            (url) => resultMap.documentUrl = url
-          )
+          uploadStreamFromBuffer(files.document[0].buffer, {
+            folder: "devtinder/posts/docs",
+            resource_type: "raw",
+          }).then((result) => (resultMap.documentUrl = result.secure_url))
         );
       }
 
@@ -184,7 +174,7 @@ postRouter.post(
       res.status(200).json(resultMap);
     } catch (err) {
       console.error("Upload error:", err);
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ message: err.message, success: false });
     }
   }
 );
@@ -246,7 +236,7 @@ postRouter.get("/feed/posts", userAuth, async (req, res) => {
 
     res.status(200).json({ data: feed, followedUserIds, userReactionsMap });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -259,11 +249,11 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
 
     const validTypes = ["fire", "bug", "clever", "collab", "none"];
     if (!validTypes.includes(type)) {
-      return res.status(400).json({ message: "Invalid reaction type" });
+      return res.status(400).json({ message: "Invalid reaction type", success: false });
     }
 
     const post = await Post.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
 
     const existingReaction = await Reaction.findOne({ postId, userId });
 
@@ -272,7 +262,7 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
         // Same reaction or explicitly 'none' -> toggle off (unreact)
         await Reaction.findByIdAndDelete(existingReaction._id);
         await Post.findByIdAndUpdate(postId, { $inc: { [`reactions.${existingReaction.type}`]: -1 } });
-        return res.json({ message: "Reaction removed", currentReaction: null });
+        return res.json({ message: "Reaction removed", currentReaction: null, success: true });
       } else {
         // Change reaction
         const oldType = existingReaction.type;
@@ -284,11 +274,11 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
             [`reactions.${type}`]: 1 
           } 
         });
-        return res.json({ message: "Reaction updated", currentReaction: type });
+        return res.json({ message: "Reaction updated", currentReaction: type, success: true });
       }
     } else {
       // New reaction
-      if (type === "none") return res.status(400).json({ message: "Cannot apply 'none' to a non-existent reaction" });
+      if (type === "none") return res.status(400).json({ message: "Cannot apply 'none' to a non-existent reaction", success: false });
       
       const newReaction = new Reaction({ postId, userId, type });
       await newReaction.save();
@@ -309,10 +299,10 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
         const io = req.app.get("io");
         if (io) io.to(`user:${post.authorId}`).emit("newNotification", notification);
       }
-      return res.json({ message: "Reaction added", currentReaction: type });
+      return res.json({ message: "Reaction added", currentReaction: type, success: true });
     }
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -320,19 +310,26 @@ postRouter.post("/post/:id/react", userAuth, async (req, res) => {
 postRouter.delete("/post/:id", userAuth, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
     
     if (post.authorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "You can only delete your own posts" });
+      return res.status(403).json({ message: "You can only delete your own posts", success: false });
     }
 
     await post.deleteOne();
-    // Cleanup reactions for this post
+    // Cleanup reactions and comments for this post
     await Reaction.deleteMany({ postId: post._id });
+    await Comment.deleteMany({ postId: post._id });
 
-    res.status(200).json({ message: "Post deleted successfully", data: post._id });
+    // Cascade deletion for project posts
+    if (post.type === "project") {
+      await ProjectRequest.deleteMany({ projectPostId: post._id });
+      await ProjectRoom.deleteMany({ projectPostId: post._id });
+    }
+
+    res.status(200).json({ message: "Post deleted successfully", data: post._id, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -340,14 +337,14 @@ postRouter.delete("/post/:id", userAuth, async (req, res) => {
 postRouter.patch("/post/:id/pin", userAuth, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    if (!post) return res.status(404).json({ message: "Post not found", success: false });
 
     if (post.authorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: "You can only pin your own posts" });
+      return res.status(403).json({ message: "You can only pin your own posts", success: false });
     }
 
     if (!post.isPinnedToProfile && post.type !== "snippet") {
-      return res.status(400).json({ message: "Only snippet posts can be pinned" });
+      return res.status(400).json({ message: "Only snippet posts can be pinned", success: false });
     }
 
     if (!post.isPinnedToProfile) {
@@ -357,7 +354,7 @@ postRouter.patch("/post/:id/pin", userAuth, async (req, res) => {
         isPinnedToProfile: true,
       });
       if (pinnedCount >= 3) {
-        return res.status(400).json({ message: "You can pin a maximum of 3 posts to your profile" });
+        return res.status(400).json({ message: "You can pin a maximum of 3 posts to your profile", success: false });
       }
     }
 
@@ -367,9 +364,10 @@ postRouter.patch("/post/:id/pin", userAuth, async (req, res) => {
     res.json({
       message: post.isPinnedToProfile ? "Post pinned to profile" : "Post unpinned from profile",
       isPinnedToProfile: post.isPinnedToProfile,
+      success: true,
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
