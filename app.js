@@ -19,8 +19,10 @@ const publicProfileRouter = require("./routes/publicProfile");
 const postRouter = require("./routes/postRouter");
 const commentRouter = require("./routes/comment");
 const projectRouter = require("./routes/projectRouter");
+const publicRouter = require("./routes/publicRouter");
 
 const app = express();
+app.set("trust proxy", 1);
 const server = http.createServer(app); // wrap in http.Server for Socket.io
 
 const allowedOrigins = [
@@ -61,6 +63,7 @@ app.use("/", publicProfileRouter);
 app.use("/", postRouter);
 app.use("/", commentRouter);
 app.use("/", projectRouter);
+app.use("/public", publicRouter);
 
 // Initialize Socket.io on the HTTP server and store io on app
 const io = initializeSocket(server);

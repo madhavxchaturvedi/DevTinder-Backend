@@ -19,9 +19,9 @@ router.get("/notifications", userAuth, async (req, res) => {
       read: false,
     });
 
-    res.json({ notifications, unreadCount });
+    res.json({ notifications, unreadCount, success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -32,9 +32,9 @@ router.patch("/notifications/mark-read", userAuth, async (req, res) => {
       { userId: req.user._id, read: false },
       { $set: { read: true } }
     );
-    res.json({ message: "All notifications marked as read" });
+    res.json({ message: "All notifications marked as read", success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 

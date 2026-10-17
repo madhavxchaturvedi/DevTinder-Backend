@@ -13,6 +13,9 @@ const User = require("../models/User");
 router.post("/payment/create", userAuth, async (req, res) => {
   try {
     const { membershipType } = req.body;
+    if (!membershipType || !membershipAmount[membershipType]) {
+      return res.status(400).json({ message: "Invalid membership type: " + membershipType, success: false });
+    }
     const { firstName, lastName, emailId } = req.user;
 
     const order = await razorpayInstance.orders.create({
@@ -49,7 +52,7 @@ router.post("/payment/create", userAuth, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -63,14 +66,14 @@ router.post("/payment/webhook", async (req, res) => {
     );
 
     if (!isWebhookValid) {
-      return res.status(400).json({ message: "Invalid webhook signature" });
+      return res.status(400).json({ message: "Invalid webhook signature", success: false });
     }
 
     //update the payment status in DB
     const paymentDetails = req.body.payload.payment.entity;
     const payment = await Payment.findOne({ orderId: paymentDetails.order_id });
     if (!payment) {
-      return res.status(404).json({ message: "Payment not found" });
+      return res.status(404).json({ message: "Payment not found", success: false });
     }
     payment.status = paymentDetails.status;
     await payment.save();
@@ -78,7 +81,7 @@ router.post("/payment/webhook", async (req, res) => {
     if (payment.status === "captured") {
       const user = await User.findOne({ _id: payment.userId });
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        return res.status(404).json({ message: "User not found", success: false });
       }
       user.isPremium = true;
       user.membershipType = payment.notes.membershipType;
@@ -86,19 +89,19 @@ router.post("/payment/webhook", async (req, res) => {
       await user.save();
       return res
         .status(200)
-        .json({ message: "Payment successful and user upgraded to premium" });
+        .json({ message: "Payment successful and user upgraded to premium", success: true });
     }
     if (payment.status === "failed") {
-      return res.status(200).json({ message: "Payment failed" });
+      return res.status(200).json({ message: "Payment failed", success: false });
     }
     //update the user membership status in DB
 
     res
       .status(200)
-      .json({ message: "Webhook received and processed successfully" });
+      .json({ message: "Webhook received and processed successfully", success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
@@ -106,12 +109,12 @@ router.get("/premium/verify", userAuth, async (req, res) => {
   try {
     const user = req.user;
     if (user.isPremium) {
-      return res.json({ isPremium: true });
+      return res.json({ isPremium: true, success: true });
     }
-    return res.json({ isPremium: false });
+    return res.json({ isPremium: false, success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message, success: false });
   }
 });
 
